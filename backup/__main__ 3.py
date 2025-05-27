@@ -137,7 +137,7 @@ def create_project(project_folder, project_name):
     settings_file = project_folder.joinpath(project_name + '_settings.xlsx')
 
     # Create demultiplexing sheet
-    cols = ['Forward index 5-3', 'Forward tag 5-3', 'Forward primer 5-3', 'Reverse index 5-3', 'Reverse tag 5-3', 'Reverse primer 5-3', 'ID']
+    cols = ['Forward index 5-3', 'Forward tag 5-3', 'Forward primer 5-3', 'Forward index 5-3', 'Forward tag 5-3', 'Forward primer 5-3', 'ID']
     rows = [['CTGT', '', 'AAACTCGTGCCAGCCACC', 'GTCCTA', '', 'GGGTATCTAATCCCAGTTTG', 'example_1_only_barcodes']]
     demultipexing_df_empty = pd.DataFrame(rows, columns=cols)
 
@@ -146,7 +146,7 @@ def create_project(project_folder, project_name):
     rows = [['General', 'cpu count', multiprocessing.cpu_count()-1, 'Number of cores to use'],
              ['demultiplexing (index)',
               'allowed errors index',
-              3,
+              4,
               'Allowed errors during index demultiplexing'],
             ['primer trimming',
              'allowed errors primer',
@@ -263,7 +263,7 @@ def watch_folder(project_folder, settings_df, demultiplexing_df, live_calling, s
                     if "Primer trimming" in steps:
                         print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt primer trimming...')
                         fastq_files = glob.glob(str(project_folder.joinpath('3_tag_demultiplexing', 'data', '*.fastq')))
-                        Parallel(n_jobs=cpu_count, backend='loky')(delayed(cutadapt_primer_trimming)(project_folder, fastq_file, settings_df, demultiplexing_df) for fastq_file in fastq_files)
+                        Parallel(n_jobs=cpu_count, backend='threading')(delayed(cutadapt_primer_trimming)(project_folder, fastq_file, settings_df, demultiplexing_df) for fastq_file in fastq_files)
                         print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt primer trimming!')
                         print('')
 
@@ -352,7 +352,7 @@ def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demult
         # Create forward sequence
         fwd_seq = row['Forward index 5-3']
         # Create reverse sequence
-        rvs_seq = reverse_complement(row['Reverse index 5-3'])
+        rvs_seq = reverse_complement(row['Forward index 5-3'])
         # Combine to search sequence
         search_seq = f'{fwd_seq}...{rvs_seq}'
         g_args.extend(['-g', search_seq])
@@ -422,15 +422,14 @@ def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demult
 def cutadapt_tag_demultiplexing(project_folder, settings_df, demultiplexing_df):
 
     # Check if tags are used
-    print(f'{datetime.now().strftime("%H:%M:%S")} - Samples will be copied to the "3_tag_demultiplexing" folder.')
-    # Still copy files to respective folder
-    files = glob.glob(str(project_folder.joinpath('2_index_demultiplexing', 'data', '*.fastq')))
-    for file in files:
-        new_file = file.replace('2_index_demultiplexing', '3_tag_demultiplexing')
-        shutil.move(file, new_file)
-
     if '' in demultiplexing_df['Forward tag 5-3'].values.tolist():
         print(f'{datetime.now().strftime("%H:%M:%S")} - No tagging information was found - skipping tag demultiplexing.')
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Samples will be copied to the "3_tag_demultiplexing" folder.')
+        # Still copy files to respective folder
+        files = glob.glob(str(project_folder.joinpath('2_index_demultiplexing', 'data', '*.fastq')))
+        for file in files:
+            new_file = file.replace('2_index_demultiplexing', '3_tag_demultiplexing')
+            shutil.move(file, new_file)
         return
 
     # Preprare output files

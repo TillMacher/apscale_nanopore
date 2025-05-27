@@ -4,14 +4,14 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="apscale_blast", # Replace with your own username
-    version="1.2.3",
+    name="apscale_nanopore", # Replace with your own username
+    version="1.0.0",
     author="Till-Hendrik Macher",
     author_email="macher@uni-trier.de",
-    description="Advanced Pipeline for Simple yet Comprehensive AnaLysEs of DNA metabarcoding data - BLAST application",
+    description="Advanced Pipeline for Simple yet Comprehensive AnaLysEs of DNA metabarcoding data - Nanopore application",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://pypi.org/project/apscale_blast/",
+    url="https://pypi.org/project/apscale_nanopore/",
     packages=setuptools.find_packages(),
     license='MIT',
     install_requires=[
@@ -33,7 +33,7 @@ setuptools.setup(
     python_requires='>=3.10',
     entry_points={
         "console_scripts": [
-            "apscale_blast = apscale_blast.__main__:main",
+            "apscale_nanopore = apscale_nanopore.__main__:main",
         ]
     },
 )

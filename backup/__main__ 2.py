@@ -125,7 +125,7 @@ def open_file(filepath):
 def create_project(project_folder, project_name):
 
     # Create subfolders
-    sub_folders = ['1_raw_data', '2_index_demultiplexing', '3_tag_demultiplexing', '4_primer_trimming', '5_quality_filtering', '6_denoising', '7_ESV_table', '8_taxonomic_assignment', '9_nanopore_report']
+    sub_folders = ['1_raw_data', '2_index_demultiplexing', '3_primer_trimming', '4_tag_demultiplexing', '5_quality_filtering', '6_denoising', '7_ESV_table', '8_taxonomic_assignment', '9_nanopore_report']
     for folder in sub_folders:
         folder_path = project_folder.joinpath(folder)
         os.makedirs(folder_path, exist_ok=True)
@@ -137,8 +137,8 @@ def create_project(project_folder, project_name):
     settings_file = project_folder.joinpath(project_name + '_settings.xlsx')
 
     # Create demultiplexing sheet
-    cols = ['Forward index 5-3', 'Forward tag 5-3', 'Forward primer 5-3', 'Reverse index 5-3', 'Reverse tag 5-3', 'Reverse primer 5-3', 'ID']
-    rows = [['CTGT', '', 'AAACTCGTGCCAGCCACC', 'GTCCTA', '', 'GGGTATCTAATCCCAGTTTG', 'example_1_only_barcodes']]
+    cols = ['Forward index', 'Forward primer', 'Forward tag', 'Reverse index', 'Reverse primer', 'Reverse tag', 'ID']
+    rows = [['', 'AAACTCGTGCCAGCCACC', 'CTGT', '', 'GGGTATCTAATCCCAGTTTG', 'GTCCTA', 'example_1_only_barcodes']]
     demultipexing_df_empty = pd.DataFrame(rows, columns=cols)
 
     # Create settings sheet
@@ -146,7 +146,7 @@ def create_project(project_folder, project_name):
     rows = [['General', 'cpu count', multiprocessing.cpu_count()-1, 'Number of cores to use'],
              ['demultiplexing (index)',
               'allowed errors index',
-              3,
+              4,
               'Allowed errors during index demultiplexing'],
             ['primer trimming',
              'allowed errors primer',
@@ -156,6 +156,10 @@ def create_project(project_folder, project_name):
              'allowed errors tag',
              1,
              'Allowed errors during tag demultiplexing'],
+            ['quality filtering',
+             'truncation value',
+             10,
+             'Reads below this length will be discarded'],
              ['quality filtering',
               'minimum length',
               '',
@@ -164,10 +168,10 @@ def create_project(project_folder, project_name):
               'maximum length',
               '',
               'Reads above this length will be discarded'],
-            ['quality filtering',
-             'minimum quality',
-             20,
-             'Reads below this average PHRED quality score will be discarded'],
+             ['quality filtering',
+              'maxee',
+              2,
+              'Reads above this maxee value will be discarded'],
              ['swarm denoising', 'd', 1, 'Stringency of denoising'],
             ['read table', 'minimum reads', 10, 'Discard reads below this threshold'],
             ['taxonomic assignment', 'apscale blast', 'yes', 'Run apscale megablast (yes or no)'],
@@ -248,8 +252,17 @@ def watch_folder(project_folder, settings_df, demultiplexing_df, live_calling, s
                     #=======# Index demultiplexing #=======#
                     if "Index demultiplexing" in steps:
                         print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt index demultiplexing...')
-                        cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demultiplexing_df)
+                        index_design = demultiplexing_df[['Forward index', 'Reverse index', 'ID']].values.tolist()
+                        Parallel(n_jobs=cpu_count, backend='threading')(delayed(cutadapt_index_demultiplexing)(project_folder, main_file, settings_df, index) for index in index_design)
                         print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt index demultiplexing!')
+                        print('')
+
+                    #=======# Primer trimming #=======#
+                    if "Primer trimming" in steps:
+                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt primer trimming...')
+                        fastq_files = glob.glob(str(project_folder.joinpath('2_index_demultiplexing', 'data', '*.fastq')))
+                        Parallel(n_jobs=cpu_count, backend='threading')(delayed(cutadapt_primer_trimming)(project_folder, fastq_file, settings_df, demultiplexing_df) for fastq_file in fastq_files)
+                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt primer trimming!')
                         print('')
 
                     #=======# Tag demultiplexing #=======#
@@ -259,18 +272,10 @@ def watch_folder(project_folder, settings_df, demultiplexing_df, live_calling, s
                         print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt tag demultiplexing!')
                         print('')
 
-                    #=======# Primer trimming #=======#
-                    if "Primer trimming" in steps:
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt primer trimming...')
-                        fastq_files = glob.glob(str(project_folder.joinpath('3_tag_demultiplexing', 'data', '*.fastq')))
-                        Parallel(n_jobs=cpu_count, backend='loky')(delayed(cutadapt_primer_trimming)(project_folder, fastq_file, settings_df, demultiplexing_df) for fastq_file in fastq_files)
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt primer trimming!')
-                        print('')
-
                     #=======# Quality filtering #=======#
                     if "Quality filtering" in steps:
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting quality filtering...')
-                        fastq_files = glob.glob(str(project_folder.joinpath('4_primer_trimming', 'data', '*.fastq.gz')))
+                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting vsearch quality filtering...')
+                        fastq_files = glob.glob(str(project_folder.joinpath('4_tag_demultiplexing', 'data', '*.fastq.gz')))
                         Parallel(n_jobs=cpu_count, backend='loky')(delayed(python_quality_filtering)(project_folder, fastq_file, settings_df) for fastq_file in fastq_files)
                         print(f'{datetime.now().strftime("%H:%M:%S")} - Finished vsearch quality filtering!')
                         print('')
@@ -320,126 +325,73 @@ def watch_folder(project_folder, settings_df, demultiplexing_df, live_calling, s
     except KeyboardInterrupt:
         print('Stopping apscale nanopore live processing.')
 
-def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demultiplexing_df):
+def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, index):
 
     # Preprare output files
-    # main_file = Path("/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/1_raw_data/data/merged_nanopore_data.fastq.gz")
+    # main_file = Path("/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/1_raw_data/data/22_subset.fastq.gz")
+    # index = ['AGAACGACTTCCATACTCGTGTGA', 'AGAACGACTTCCATACTCGTGTGA', 'Sample_1']
     input_file = main_file
-    name = input_file.name.replace('.fastq.gz', '')
+
+    # Define output file
+    name = index[-1]
     output_folder_tmp = project_folder.joinpath('2_index_demultiplexing', 'tmp')
     output_folder_data = project_folder.joinpath('2_index_demultiplexing', 'data')
-    output_file = output_folder_tmp.joinpath("{name}_fwd.fastq")
+    output_file = output_folder_tmp.joinpath(name + '_{name}.fastq.gz')
+    output_file_1 = output_folder_tmp.joinpath(name + '_1.fastq.gz')
+    output_file_2 = output_folder_tmp.joinpath(name + '_2.fastq.gz')
+    output_file_2_fastq = str(output_file_2).replace('.fastq.gz', '.fastq')
+    os.rename(output_file_2, output_file_2_fastq)
+    output_file_2_rc = output_folder_tmp.joinpath(name + '_2.fastq.gz')
+    merged_fastq = output_folder_data.joinpath(f'{name}.fastq.gz')
 
     # Create tmp folder
     tmp_folder = project_folder.joinpath('2_index_demultiplexing', 'tmp')
     os.makedirs(tmp_folder, exist_ok=True)
 
-    # Create reverse complement of untrimmed
-    output_file_rc = output_folder_tmp.joinpath("{name}_rc.fastq")
-    untrimmed_folder = project_folder.joinpath('2_index_demultiplexing', 'untrimmed')
-    os.makedirs(untrimmed_folder, exist_ok=True)
-    untrimmed_fastq = untrimmed_folder.joinpath('untrimmed.fastq')
-    untrimmed_rc_fastq = untrimmed_folder.joinpath('untrimmed_rc.fastq')
-
     # Collect required settings
     number_of_errors = settings_df[settings_df['Category'] == 'allowed errors index']['Variable'].values.tolist()[0]
-    cpu_count = settings_df[settings_df['Category'] == 'cpu count']['Variable'].values.tolist()[0]
 
-    ##======## Demultuplexing forward reads ##======##
+    ##======## Demultuplexing reads ##======##
     # Run cutadapt demultiplexing
-    g_args = []
-    for _, row in demultiplexing_df.iterrows():
-        # Create forward sequence
-        fwd_seq = row['Forward index 5-3']
-        # Create reverse sequence
-        rvs_seq = reverse_complement(row['Reverse index 5-3'])
-        # Combine to search sequence
-        search_seq = f'{fwd_seq}...{rvs_seq}'
-        g_args.extend(['-g', search_seq])
-
-    # Run cutadapt demultiplexing
-    command = f"cutadapt -e {number_of_errors} {' '.join(g_args)} --cores {cpu_count} -o {output_file} --untrimmed-output {untrimmed_fastq} --report=minimal {input_file}"
+    g_args = f'-g {index[0]}...{reverse_complement(index[1])}'
+    g_args_rc = f'-g {reverse_complement(index[0])}...{index[1]}'
+    command = f"cutadapt -e {number_of_errors} {g_args} {g_args_rc} --cores 1 -o {output_file} --discard-untrimmed --report=minimal {input_file}"
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     stdout, stderr = process.communicate()
     in_reads1 = int(stdout.split()[11])
     out_reads1 = int(stdout.split()[-3])
 
-    print(f'{datetime.now().strftime("%H:%M:%S")} - Finished demultiplexing in 5\'-3\' orientation!')
-
-    ##======## Demultuplexing RC reads ##======##
-    # Vsearch reverse complement
-    command = f"vsearch --fastx_revcomp {untrimmed_fastq} --fastqout {untrimmed_rc_fastq}"
+    ##======## Reverse complement .2 reads ##======##
+    command = f"vsearch --fastx_revcomp {output_file_2_fastq} --fastqout {output_file_2_rc}"
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     stdout, stderr = process.communicate()
-
-    if untrimmed_fastq.exists():
-        os.remove(untrimmed_fastq)
-
-    # Run cutadapt again
-    command = f"cutadapt -e {number_of_errors} {' '.join(g_args)} --cores {cpu_count} -o {output_file_rc} --discard-untrimmed --report=minimal {untrimmed_rc_fastq}"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
-    out_reads2 = int(stdout.split()[-3])
-
-    print(f'{datetime.now().strftime("%H:%M:%S")} - Finished demultiplexing in 3\'-5\' orientation!')
 
     try:
         reads_perc = round((out_reads1 + out_reads2) / in_reads1 * 100, 2)
     except ZeroDivisionError:
         reads_perc = 0
-    print(f'{datetime.now().strftime("%H:%M:%S")} - Finished demultiplexing of {name}: {in_reads1:,} -> {out_reads1 + out_reads2:,} reads ({reads_perc}% passed).')
-
-    if untrimmed_folder.exists():
-        shutil.rmtree(untrimmed_folder)
-
-    ##======## Merge files ##======##
-    # Collect all .fastq files (uncompressed)
-    demultiplexed_fwd_files = sorted(glob.glob(str(output_folder_tmp.joinpath('*_fwd.fastq'))))
-    demultiplexed_rc_files = sorted(glob.glob(str(output_folder_tmp.joinpath('*_rc.fastq'))))
-
-    # Only continue if files were demultiplexed
-    if len(demultiplexed_fwd_files) == 0:
-        print(f'{datetime.now().strftime("%H:%M:%S")} - Error: Could not find any demultiplexed files!')
-        return
-
-    # Define merging function (uncompressed)
-    def merge_fastq_files(tmp_file_fwd, tmp_file_rc, output_folder_data):
-        index = int(Path(tmp_file_fwd).name.replace('_fwd.fastq', '')) - 1
-        sample_id = demultiplexing_df['ID'][index]
-        output_file = output_folder_data.joinpath(f'{sample_id}.fastq')
-
-        with open(output_file, "w") as out_handle:
-            for in_file in [tmp_file_fwd, tmp_file_rc]:
-                with open(in_file, "r") as in_handle:
-                    shutil.copyfileobj(in_handle, out_handle, length=1024 * 1024)  # 1MB buffer
-
-        os.remove(tmp_file_fwd)
-        os.remove(tmp_file_rc)
-        print(f'{datetime.now().strftime("%H:%M:%S")} - Merged and saved {sample_id}!')
-
-    Parallel(n_jobs=-1, backend='loky')(delayed(merge_fastq_files)(tmp_file_fwd, tmp_file_rc, output_folder_data) for tmp_file_fwd, tmp_file_rc in zip(demultiplexed_fwd_files, demultiplexed_rc_files))
+    print(f'{datetime.now().strftime("%H:%M:%S")} - {name}: {in_reads1:,} -> {out_reads1 + out_reads2:,} reads ({reads_perc}%).')
 
 def cutadapt_tag_demultiplexing(project_folder, settings_df, demultiplexing_df):
 
     # Check if tags are used
-    print(f'{datetime.now().strftime("%H:%M:%S")} - Samples will be copied to the "3_tag_demultiplexing" folder.')
-    # Still copy files to respective folder
-    files = glob.glob(str(project_folder.joinpath('2_index_demultiplexing', 'data', '*.fastq')))
-    for file in files:
-        new_file = file.replace('2_index_demultiplexing', '3_tag_demultiplexing')
-        shutil.move(file, new_file)
-
-    if '' in demultiplexing_df['Forward tag 5-3'].values.tolist():
+    if '' in demultiplexing_df['Forward tag'].values.tolist():
         print(f'{datetime.now().strftime("%H:%M:%S")} - No tagging information was found - skipping tag demultiplexing.')
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Samples will be copied to the "4_tag_demultiplexing" folder.')
+        # Still copy files to respective folder
+        files = glob.glob(str(project_folder.joinpath('3_primer_trimming', 'data', '*.fastq.gz')))
+        for file in files:
+            new_file = file.replace('3_primer_trimming', '4_tag_demultiplexing')
+            shutil.move(file, new_file)
         return
 
     # Preprare output files
-    output_folder_tmp = project_folder.joinpath('3_tag_demultiplexing', 'tmp')
-    output_folder_data = project_folder.joinpath('3_tag_demultiplexing', 'data')
+    output_folder_tmp = project_folder.joinpath('4_tag_demultiplexing', 'tmp')
+    output_folder_data = project_folder.joinpath('4_tag_demultiplexing', 'data')
     output_file = output_folder_tmp.joinpath("{name}.fastq")
 
     # Create tmp folder
-    tmp_folder = project_folder.joinpath('3_tag_demultiplexing', 'tmp')
+    tmp_folder = project_folder.joinpath('4_tag_demultiplexing', 'tmp')
     os.makedirs(tmp_folder, exist_ok=True)
 
     # Collect required settings
@@ -447,8 +399,8 @@ def cutadapt_tag_demultiplexing(project_folder, settings_df, demultiplexing_df):
     cpu_count = settings_df[settings_df['Category'] == 'cpu count']['Variable'].values.tolist()[0]
 
     # Collect all files
-    files = glob.glob(str(project_folder.joinpath('4_primer_trimming', 'data', '*.fastq.gz')))
-    merged_file = project_folder.joinpath('3_tag_demultiplexing', 'tmp', 'merged_samples.fastq.gz')
+    files = glob.glob(str(project_folder.joinpath('3_primer_trimming', 'data', '*.fastq.gz')))
+    merged_file = project_folder.joinpath('4_tag_demultiplexing', 'tmp', 'merged_samples.fastq.gz')
     with gzip.open(merged_file, "wb") as outfile:
         for f in files:
             with gzip.open(f, "rb") as infile:
@@ -458,9 +410,9 @@ def cutadapt_tag_demultiplexing(project_folder, settings_df, demultiplexing_df):
     g_args = []
     for _, row in demultiplexing_df.iterrows():
         # Create forward sequence
-        fwd_seq = row['Forward tag 5-3']
+        fwd_seq = row['Forward tag']
         # Create reverse sequence
-        rvs_seq = row['Forward tag 5-3']
+        rvs_seq = row['Reverse tag']
         # Combine to search sequence
         search_seq = f'{fwd_seq}...{rvs_seq}'
         g_args.extend(['-g', search_seq])
@@ -499,15 +451,15 @@ def cutadapt_tag_demultiplexing(project_folder, settings_df, demultiplexing_df):
 def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_df):
 
     # Preprare output files
-    # file = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/2_index_demultiplexing/data/Sample_3.fastq'
+    # file = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/2_index_demultiplexing/data/Sample_3.fastq.gz'
     input_file = Path(file)
-    name = input_file.name.replace('.fastq', '')
-    output_folder_data = project_folder.joinpath('4_primer_trimming', 'data')
+    name = input_file.name.replace('.fastq.gz', '')
+    output_folder_data = project_folder.joinpath('3_primer_trimming', 'data')
     output_file = output_folder_data.joinpath(f"{name}_trimmed.fastq.gz")
 
     # Also save the untrimmed reads
     # Create reverse complement of untrimmed
-    untrimmed_folder = project_folder.joinpath('4_primer_trimming', 'untrimmed')
+    untrimmed_folder = project_folder.joinpath('3_primer_trimming', 'untrimmed')
     os.makedirs(untrimmed_folder, exist_ok=True)
     output_file_untrimmed = untrimmed_folder.joinpath(f"{name}_untrimmed.fastq")
     output_file_untrimmed_rc = untrimmed_folder.joinpath(f"{name}_untrimmed_rc.fastq")
@@ -520,9 +472,9 @@ def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_d
     # Run cutadapt demultiplexing
     # Create forward sequence
     sub_df = demultiplexing_df[demultiplexing_df['ID'] == name]
-    fwd_seq = sub_df['Forward primer 5-3'].values.tolist()[0]
+    fwd_seq = sub_df['Forward primer'].values.tolist()[0]
     # Create reverse sequence
-    rvs_seq_rc = reverse_complement(sub_df['Reverse primer 5-3'].values.tolist()[0])
+    rvs_seq_rc = reverse_complement(sub_df['Reverse primer'].values.tolist()[0])
     adapter = f'{fwd_seq}...{rvs_seq_rc}'
 
     ##======## Trimming of reads in 5'-3' orientation ##======##
@@ -570,7 +522,7 @@ def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_d
         reads_perc = round((out_reads1 + out_reads2) / in_reads1 * 100, 2)
     except ZeroDivisionError:
         reads_perc = 0
-    print(f'{datetime.now().strftime("%H:%M:%S")} - {name}: {in_reads1:,} -> {out_reads1 + out_reads2:,} reads ({reads_perc}% passed).')
+    print(f'{datetime.now().strftime("%H:%M:%S")} - {name}: {in_reads1:,} -> {out_reads1 + out_reads2:,} reads ({reads_perc}%).')
 
 def python_quality_filtering(project_folder, file, settings_df):
 
@@ -586,7 +538,7 @@ def python_quality_filtering(project_folder, file, settings_df):
     # Collect required settings
     min_len = settings_df[settings_df['Category'] == 'minimum length']['Variable'].values.tolist()[0]
     max_len = settings_df[settings_df['Category'] == 'maximum length']['Variable'].values.tolist()[0]
-    trunc_val = settings_df[settings_df['Category'] == 'minimum quality']['Variable'].values.tolist()[0]
+    trunc_val = settings_df[settings_df['Category'] == 'truncation value']['Variable'].values.tolist()[0]
 
     # Run python-based quality filtering
     reads_1 = 0
@@ -614,11 +566,7 @@ def python_quality_filtering(project_folder, file, settings_df):
     stdout, stderr = process.communicate()
     reads_2 = stderr.split()[-15]
 
-    try:
-        reads_perc = round(reads_1 / total_reads * 100, 2)
-    except ZeroDivisionError:
-        reads_perc = 0
-    print(f'{datetime.now().strftime("%H:%M:%S")} - {name.replace("_trimmed", "")}: {total_reads:,} -> {reads_1:,} ({reads_perc}% passed) -> {int(reads_2):,} (dereplication)')
+    print(f'{datetime.now().strftime("%H:%M:%S")} - {name.replace("_trimmed", "")}: {total_reads:,} (input) -> {reads_1:,} (quality) -> {int(reads_2):,} (dereplication)')
 
     if filtered_fasta.exists():
         os.remove(filtered_fasta)
@@ -672,15 +620,13 @@ def create_read_table(project_folder, settings_df):
     sample_cols = df.columns.difference(['Seq'])
     total_reads_before = df[sample_cols].sum().sum()
     n_swarms_before = len(df)
-    df[sample_cols] = df[sample_cols].where(df[sample_cols] >= int(min_reads), 0)
+    df[sample_cols] = df[sample_cols].where(df[sample_cols] > int(min_reads), 0)
 
     # Filter low-abundance ESVs
     df.index.name = "ID"
     df.reset_index(inplace=True)
     df['sum'] = df[sample_cols].sum(axis=1)
     df = df[df['sum'] != 0]
-    df['sum'] = df[sample_cols].sum(axis=1)
-    df = df.sort_values('sum', ascending=False)
 
     # Calculate stats
     total_reads_after = df['sum'].sum()
@@ -818,7 +764,7 @@ def main():
     run_parser.add_argument('-t', type=str, help='Overwrite: quality truncation cutoff.')
     run_parser.add_argument('-minlen', type=str, help='Overwrite: minimum length.')
     run_parser.add_argument('-maxlen', type=str, help='Overwrite: maximum length.')
-    run_parser.add_argument('-minq', type=str, help='Overwrite: minimum quality value.')
+    run_parser.add_argument('-maxee', type=str, help='Overwrite: maxee value.')
     run_parser.add_argument('-d', type=str, help="Overwrite: swarm's d value.")
     run_parser.add_argument('-minreads', type=str, help="Overwrite: Read filter threshold.")
     run_parser.add_argument('-step', type=str, help="Select step to re-run individually. "
@@ -843,7 +789,7 @@ def main():
     elif args.command == 'run':
 
         # Collect step information
-        all_steps = {"1": "Index demultiplexing", "2": "Tag demultiplexing", "3": "Primer trimming",
+        all_steps = {"1": "Index demultiplexing", "2": "Primer trimming", "3": "Tag demultiplexing",
                      "4": "Quality filtering", "5": "Denoising", "6": "ESV table", "7": "Tax. assignment"}
         if args.step:
             steps = [all_steps[args.step]]
@@ -879,7 +825,7 @@ def main():
                 settings_df.loc[index, 'Variable'] = args.e3
                 print(f'Adjusted value: Number of allowed tag errors: {args.e3}')
             if args.t:
-                index = settings_df[settings_df['Category'] == 'q_min'].index[0]
+                index = settings_df[settings_df['Category'] == 'truncation value'].index[0]
                 settings_df.loc[index, 'Variable'] = args.t
                 print(f'Adjusted value: Truncation cutoff: {args.t}')
             if args.minlen:
@@ -890,10 +836,10 @@ def main():
                 index = settings_df[settings_df['Category'] == 'maximum length'].index[0]
                 settings_df.loc[index, 'Variable'] = args.maxlen
                 print(f'Adjusted value: Maximum length: {args.maxlen}')
-            if args.minq:
-                index = settings_df[settings_df['Category'] == 'minimum quality'].index[0]
-                settings_df.loc[index, 'Variable'] = args.minq
-                print(f'Adjusted value: Maximum expected error: {args.minq}')
+            if args.maxee:
+                index = settings_df[settings_df['Category'] == 'maxee'].index[0]
+                settings_df.loc[index, 'Variable'] = args.maxee
+                print(f'Adjusted value: Maximum expected error: {args.maxee}')
             if args.d:
                 index = settings_df[settings_df['Category'] == 'd'].index[0]
                 settings_df.loc[index, 'Variable'] = args.d
