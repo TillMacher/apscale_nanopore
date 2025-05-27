@@ -49,7 +49,7 @@ def quality_report(project_folder, sub_folder, compressed):
 
         compressed = True
         filename = Path('/Volumes/Coruscant/APSCALE_projects/naturalis_test_apscale_nanopore/3_primer_trimming/data/naturalis_sample_1_trimmed.fastq.gz')
-        outdir = Path('/Volumes/Coruscant/APSCALE_projects/naturalis_test_apscale_nanopore/9_nanopore_report/')
+        outdir = Path('/Volumes/Coruscant/APSCALE_projects/naturalis_test_apscale_nanopore/8_nanopore_report/')
 
         # Choose appropriate open method
         open_func = gzip.open if compressed else open
@@ -125,7 +125,7 @@ def open_file(filepath):
 def create_project(project_folder, project_name):
 
     # Create subfolders
-    sub_folders = ['1_raw_data', '2_index_demultiplexing', '3_tag_demultiplexing', '4_primer_trimming', '5_quality_filtering', '6_denoising', '7_ESV_table', '8_taxonomic_assignment', '9_nanopore_report']
+    sub_folders = ['1_raw_data', '2_index_demultiplexing', '3_primer_trimming', '4_quality_filtering', '5_denoising', '6_ESV_table', '7_taxonomic_assignment', '8_nanopore_report']
     for folder in sub_folders:
         folder_path = project_folder.joinpath(folder)
         os.makedirs(folder_path, exist_ok=True)
@@ -137,8 +137,8 @@ def create_project(project_folder, project_name):
     settings_file = project_folder.joinpath(project_name + '_settings.xlsx')
 
     # Create demultiplexing sheet
-    cols = ['Forward index 5-3', 'Forward tag 5-3', 'Forward primer 5-3', 'Reverse index 5-3', 'Reverse tag 5-3', 'Reverse primer 5-3', 'ID']
-    rows = [['CTGT', '', 'AAACTCGTGCCAGCCACC', 'GTCCTA', '', 'GGGTATCTAATCCCAGTTTG', 'example_1_only_barcodes']]
+    cols = ['Forward index 5-3', 'Forward primer 5-3', 'Reverse index 5-3', 'Reverse primer 5-3', 'ID']
+    rows = [['CTGT', 'AAACTCGTGCCAGCCACC', 'GTCCTA', 'GGGTATCTAATCCCAGTTTG', 'example_1']]
     demultipexing_df_empty = pd.DataFrame(rows, columns=cols)
 
     # Create settings sheet
@@ -152,10 +152,6 @@ def create_project(project_folder, project_name):
              'allowed errors primer',
              4,
              'Allowed errors during primer trimming'],
-            ['demultiplexing (tag)',
-             'allowed errors tag',
-             1,
-             'Allowed errors during tag demultiplexing'],
              ['quality filtering',
               'minimum length',
               '',
@@ -168,7 +164,10 @@ def create_project(project_folder, project_name):
              'minimum quality',
              20,
              'Reads below this average PHRED quality score will be discarded'],
-             ['swarm denoising', 'd', 1, 'Stringency of denoising'],
+            ['clustering/denoising', 'mode', 'OTUs', 'Choose from: "OTUs", "ESVs", "Swarms"'],
+            ['clustering/denoising', 'OTUs', 0.97, 'Vsearch clustering percentage identity'],
+            ['clustering/denoising', 'ESVs', 3, 'Vsearch denoising alpha value'],
+            ['clustering/denoising', 'Swarms', 1, 'Swarm\' d value'],
             ['read table', 'minimum reads', 10, 'Discard reads below this threshold'],
             ['taxonomic assignment', 'apscale blast', 'yes', 'Run apscale megablast (yes or no)'],
             ['taxonomic assignment', 'apscale db', '', 'Path to local database'],
@@ -252,17 +251,10 @@ def watch_folder(project_folder, settings_df, demultiplexing_df, live_calling, s
                         print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt index demultiplexing!')
                         print('')
 
-                    #=======# Tag demultiplexing #=======#
-                    if "Tag demultiplexing" in steps:
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt tag demultiplexing...')
-                        cutadapt_tag_demultiplexing(project_folder, settings_df, demultiplexing_df)
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt tag demultiplexing!')
-                        print('')
-
                     #=======# Primer trimming #=======#
                     if "Primer trimming" in steps:
                         print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt primer trimming...')
-                        fastq_files = glob.glob(str(project_folder.joinpath('3_tag_demultiplexing', 'data', '*.fastq')))
+                        fastq_files = glob.glob(str(project_folder.joinpath('2_index_demultiplexing', 'data', '*.fastq*')))
                         Parallel(n_jobs=cpu_count, backend='loky')(delayed(cutadapt_primer_trimming)(project_folder, fastq_file, settings_df, demultiplexing_df) for fastq_file in fastq_files)
                         print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt primer trimming!')
                         print('')
@@ -270,17 +262,17 @@ def watch_folder(project_folder, settings_df, demultiplexing_df, live_calling, s
                     #=======# Quality filtering #=======#
                     if "Quality filtering" in steps:
                         print(f'{datetime.now().strftime("%H:%M:%S")} - Starting quality filtering...')
-                        fastq_files = glob.glob(str(project_folder.joinpath('4_primer_trimming', 'data', '*.fastq.gz')))
+                        fastq_files = glob.glob(str(project_folder.joinpath('3_primer_trimming', 'data', '*.fastq.gz')))
                         Parallel(n_jobs=cpu_count, backend='loky')(delayed(python_quality_filtering)(project_folder, fastq_file, settings_df) for fastq_file in fastq_files)
                         print(f'{datetime.now().strftime("%H:%M:%S")} - Finished vsearch quality filtering!')
                         print('')
 
                     #=======# Denoising #=======#
                     if "Denoising" in steps:
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting swarm denoising...')
-                        fasta_files = glob.glob(str(project_folder.joinpath('5_quality_filtering', 'data', '*.fasta')))
-                        Parallel(n_jobs=cpu_count, backend='loky')(delayed(swarm_denoising)(project_folder, fasta_file, settings_df) for fasta_file in fasta_files)
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished swarm denoising...')
+                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting clustering/denoising...')
+                        fasta_files = glob.glob(str(project_folder.joinpath('4_quality_filtering', 'data', '*.fasta')))
+                        Parallel(n_jobs=cpu_count, backend='loky')(delayed(clustering_denoising)(project_folder, fasta_file, settings_df) for fasta_file in fasta_files)
+                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished clustering/denoising...')
                         print('')
 
                     #=======# Read table #=======#
@@ -321,6 +313,18 @@ def watch_folder(project_folder, settings_df, demultiplexing_df, live_calling, s
         print('Stopping apscale nanopore live processing.')
 
 def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demultiplexing_df):
+
+    # Check if index demultiplexing is required
+    if '' in demultiplexing_df['Forward index 5-3'].values.tolist():
+        print(f'{datetime.now().strftime("%H:%M:%S")} - No tagging information was found - skipping demultiplexing.')
+
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Samples will be copied to the "2_index_demultiplexing" folder.')
+        # Still copy files to respective folder
+        files = glob.glob(str(project_folder.joinpath('1_raw_data', 'data', '*.fastq*')))
+        for file in files:
+            new_file = file.replace('1_raw_data', '2_index_demultiplexing')
+            shutil.move(file, new_file)
+        return
 
     # Preprare output files
     # main_file = Path("/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/1_raw_data/data/merged_nanopore_data.fastq.gz")
@@ -419,95 +423,18 @@ def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demult
 
     Parallel(n_jobs=-1, backend='loky')(delayed(merge_fastq_files)(tmp_file_fwd, tmp_file_rc, output_folder_data) for tmp_file_fwd, tmp_file_rc in zip(demultiplexed_fwd_files, demultiplexed_rc_files))
 
-def cutadapt_tag_demultiplexing(project_folder, settings_df, demultiplexing_df):
-
-    # Check if tags are used
-    print(f'{datetime.now().strftime("%H:%M:%S")} - Samples will be copied to the "3_tag_demultiplexing" folder.')
-    # Still copy files to respective folder
-    files = glob.glob(str(project_folder.joinpath('2_index_demultiplexing', 'data', '*.fastq')))
-    for file in files:
-        new_file = file.replace('2_index_demultiplexing', '3_tag_demultiplexing')
-        shutil.move(file, new_file)
-
-    if '' in demultiplexing_df['Forward tag 5-3'].values.tolist():
-        print(f'{datetime.now().strftime("%H:%M:%S")} - No tagging information was found - skipping tag demultiplexing.')
-        return
-
-    # Preprare output files
-    output_folder_tmp = project_folder.joinpath('3_tag_demultiplexing', 'tmp')
-    output_folder_data = project_folder.joinpath('3_tag_demultiplexing', 'data')
-    output_file = output_folder_tmp.joinpath("{name}.fastq")
-
-    # Create tmp folder
-    tmp_folder = project_folder.joinpath('3_tag_demultiplexing', 'tmp')
-    os.makedirs(tmp_folder, exist_ok=True)
-
-    # Collect required settings
-    number_of_errors = settings_df[settings_df['Category'] == 'allowed errors tag']['Variable'].values.tolist()[0]
-    cpu_count = settings_df[settings_df['Category'] == 'cpu count']['Variable'].values.tolist()[0]
-
-    # Collect all files
-    files = glob.glob(str(project_folder.joinpath('4_primer_trimming', 'data', '*.fastq.gz')))
-    merged_file = project_folder.joinpath('3_tag_demultiplexing', 'tmp', 'merged_samples.fastq.gz')
-    with gzip.open(merged_file, "wb") as outfile:
-        for f in files:
-            with gzip.open(f, "rb") as infile:
-                shutil.copyfileobj(infile, outfile)
-
-    # Run cutadapt demultiplexing
-    g_args = []
-    for _, row in demultiplexing_df.iterrows():
-        # Create forward sequence
-        fwd_seq = row['Forward tag 5-3']
-        # Create reverse sequence
-        rvs_seq = row['Forward tag 5-3']
-        # Combine to search sequence
-        search_seq = f'{fwd_seq}...{rvs_seq}'
-        g_args.extend(['-g', search_seq])
-
-    # Run cutadapt demultiplexing and primer trimming
-    command = f"cutadapt -e {number_of_errors} {' '.join(g_args)} --cores 1 -o {output_file} --discard-untrimmed --report=minimal {merged_file}"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
-
-    # You can now use `stdout` and `stderr` as variables
-    in_reads = int(stdout.split()[11])
-    out_reads = int(stdout.split()[-3])
-    out_reads_perc = round(out_reads / in_reads * 100, 2)
-    print(f'{datetime.now().strftime("%H:%M:%S")} - Finished tag demultiplexing of: {out_reads_perc}% of reads kept.')
-
-    # Collect all .fastq files (uncompressed)
-    demultiplexed_files = glob.glob(str(output_folder_tmp.joinpath('*.fastq')))
-
-    if len(demultiplexed_files) == 0:
-        print(f'{datetime.now().strftime("%H:%M:%S")} - Error: Could not find any demultiplexed files!')
-        return False
-
-    for tmp_file in tqdm(demultiplexed_files, desc='Writing sample files'):
-        tmp_file = Path(tmp_file)
-        index = int(tmp_file.name.replace('.fastq', '')) - 1
-        sample_id = demultiplexing_df['ID'][index]
-        sample_file = output_folder_data.joinpath(f'{sample_id}.fastq.gz')
-
-        # Append compressed data to the .fastq.gz file
-        with open(tmp_file, "rb") as in_handle, gzip.open(sample_file, "ab") as out_handle:
-            shutil.copyfileobj(in_handle, out_handle)
-
-    # Remove tmp files
-    shutil.rmtree(output_folder_tmp)
-
 def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_df):
 
     # Preprare output files
-    # file = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/2_index_demultiplexing/data/Sample_3.fastq'
+    # file = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/2_index_demultiplexing/data/Sample_3.fastq.gz'
     input_file = Path(file)
-    name = input_file.name.replace('.fastq', '')
-    output_folder_data = project_folder.joinpath('4_primer_trimming', 'data')
+    name = input_file.name.replace('.fastq', '').replace('.gz', '')
+    output_folder_data = project_folder.joinpath('3_primer_trimming', 'data')
     output_file = output_folder_data.joinpath(f"{name}_trimmed.fastq.gz")
 
     # Also save the untrimmed reads
     # Create reverse complement of untrimmed
-    untrimmed_folder = project_folder.joinpath('4_primer_trimming', 'untrimmed')
+    untrimmed_folder = project_folder.joinpath('3_primer_trimming', 'untrimmed')
     os.makedirs(untrimmed_folder, exist_ok=True)
     output_file_untrimmed = untrimmed_folder.joinpath(f"{name}_untrimmed.fastq")
     output_file_untrimmed_rc = untrimmed_folder.joinpath(f"{name}_untrimmed_rc.fastq")
@@ -578,7 +505,7 @@ def python_quality_filtering(project_folder, file, settings_df):
     # file = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/3_primer_trimming/data/Sample_3_trimmed.fastq.gz'
     input_file = Path(file)
     name = input_file.name.replace('.fastq.gz', '')
-    output_folder_data = project_folder.joinpath('5_quality_filtering', 'data')
+    output_folder_data = project_folder.joinpath('4_quality_filtering', 'data')
     # output files
     filtered_fasta = output_folder_data.joinpath(f'{name}_filtered.fasta')
     dereplicated_fasta = output_folder_data.joinpath(f'{name}_filtered_derep.fasta')
@@ -618,34 +545,60 @@ def python_quality_filtering(project_folder, file, settings_df):
         reads_perc = round(reads_1 / total_reads * 100, 2)
     except ZeroDivisionError:
         reads_perc = 0
-    print(f'{datetime.now().strftime("%H:%M:%S")} - {name.replace("_trimmed", "")}: {total_reads:,} -> {reads_1:,} ({reads_perc}% passed) -> {int(reads_2):,} (dereplication)')
+    print(f'{datetime.now().strftime("%H:%M:%S")} - {name.replace("_trimmed", "")}: {total_reads:,} -> {reads_1:,} reads ({reads_perc}% passed) -> {int(reads_2):,} (dereplication)')
 
     if filtered_fasta.exists():
         os.remove(filtered_fasta)
 
-def swarm_denoising(project_folder, file, settings_df):
+def clustering_denoising(project_folder, file, settings_df):
 
     # Preprate output files
+    # file = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/4_quality_filtering/data/Sample_1_trimmed_filtered_derep.fasta'
     input_file = Path(file)
     name = input_file.name.replace('_trimmed_filtered_derep.fasta', '')
-    output_folder_data = project_folder.joinpath('6_denoising', 'data')
+    output_folder_data = project_folder.joinpath('5_denoising', 'data')
     cluster_file = output_folder_data.joinpath(f'{name}_clusters.fasta')
 
     # Collect required settings
-    d_value = settings_df[settings_df['Category'] == 'd']['Variable'].values.tolist()[0]
+    mode = settings_df[settings_df['Category'] == 'mode']['Variable'].values.tolist()[0]
 
-    # Run swarm denoising
-    command = f"swarm -d {d_value} --threads 1 -z --seeds {cluster_file} {input_file}"
+    if mode == 'Swarms':
+        d_value = settings_df[settings_df['Category'] == 'Swarms']['Variable'].values.tolist()[0]
+        # Run swarm denoising
+        command = f"swarm -d {d_value} --threads 1 -z --seeds {cluster_file} {input_file}"
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+        clusters = int(stderr.split()[-7])
+    elif mode == 'ESVs':
+        alpha_value = settings_df[settings_df['Category'] == 'ESVs']['Variable'].values.tolist()[0]
+        # Run vsearch denoising
+        command = f"vsearch --cluster_unoise {input_file} --unoise_alpha {alpha_value} --threads 1 --centroids {cluster_file} "
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+        clusters = int(stderr.split()[-16])
+    else:
+        percid_value = settings_df[settings_df['Category'] == 'OTUs']['Variable'].values.tolist()[0]
+        # Run vsearch clustering
+        command = f"vsearch --cluster_size {input_file} --id {percid_value} --threads 1 --centroids {cluster_file} "
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+        clusters = int(stderr.split()[-16])
+
+    # Perform chimera detection
+    nochimera_fasta = output_folder_data.joinpath(f'{name}_clusters_nochimera.fasta')
+    command = f'vsearch --uchime3_denovo {cluster_file} --threads 1 --nonchimeras {nochimera_fasta}'
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     stdout, stderr = process.communicate()
-
-    # You can now use `stdout` and `stderr` as variables
-    swarms = int(stderr.split()[-7])
-    print(f'{datetime.now().strftime("%H:%M:%S")} - {name}: {swarms:,} swarms.')
+    nochimera_total = stderr.split()[-12]
+    nochimera_perc = stderr.split()[-11]
+    print(f'{datetime.now().strftime("%H:%M:%S")} - {name}: Wrote {int(nochimera_total):,} {nochimera_perc} non-chimera {mode}.')
+    if cluster_file.exists():
+        os.remove(cluster_file)
+    time.sleep(1)
 
 def create_read_table(project_folder, settings_df):
     # Prepare output files
-    swarm_files_path = project_folder.joinpath('6_denoising', 'data', '*_clusters.fasta')
+    swarm_files_path = project_folder.joinpath('5_denoising', 'data', '*_clusters_nochimera.fasta')
     swarm_files = [Path(i) for i in glob.glob(str(swarm_files_path))]
     data = defaultdict(lambda: defaultdict(int))  # nested dict: hash -> sample -> size
     seq_dict = {}  # hash -> sequence
@@ -704,33 +657,23 @@ def create_read_table(project_folder, settings_df):
 
     # Write to files
     if df.shape[0] < 65000:
-        excel_file = project_folder.joinpath('7_ESV_table', f'{project_name}_swarms.xlsx')
+        excel_file = project_folder.joinpath('6_ESV_table', f'{project_name}_swarms.xlsx')
         df.to_excel(excel_file, index=False)
-    parquet_file = project_folder.joinpath('7_ESV_table', f'{project_name}_swarms.parquet.snappy')
+    parquet_file = project_folder.joinpath('6_ESV_table', f'{project_name}_swarms.parquet.snappy')
     df.to_parquet(parquet_file, compression='snappy')
 
     # Write sequences to fasta
-    fasta_file = project_folder.joinpath('7_ESV_table', 'data', f'{project_name}_swarms.fasta')
+    fasta_file = project_folder.joinpath('6_ESV_table', 'data', f'{project_name}_swarms.fasta')
     with open(fasta_file, "w") as output_handle:
         for hash, seq in df[['ID', 'Seq']].values.tolist():
             record = SeqRecord(Seq(seq), id=hash, description='')
             SeqIO.write(record, output_handle, "fasta")
 
-    # Perform chimera detection
-    nochimera_fasta = project_folder.joinpath('7_ESV_table', 'data', f'{project_name}_swarms_nochimera.fasta')
-    command = f'vsearch --uchime3_denovo {fasta_file} --nonchimeras {nochimera_fasta}'
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
-    nochimera_total = stderr.split()[-12]
-    nochimera_perc = stderr.split()[-11]
-    print(f'{datetime.now().strftime("%H:%M:%S")} - Wrote {int(nochimera_total):,} {nochimera_perc} non-chimeras.')
-    time.sleep(1)
-
 def apscale_taxonomic_assignment(project_folder, settings_df):
     # Define files
     project_name = project_folder.name.replace('_apscale_nanopore', '')
-    fasta_file = project_folder.joinpath('7_ESV_table', 'data', f'{project_name}_swarms_nochimera.fasta')
-    results_folder = project_folder.joinpath('8_taxonomic_assignment', project_name)
+    fasta_file = project_folder.joinpath('6_ESV_table', 'data', f'{project_name}_swarms_nochimera.fasta')
+    results_folder = project_folder.joinpath('7_taxonomic_assignment', project_name)
 
     # Collect variables
     run_blastn = settings_df[settings_df['Category'] == 'apscale blast']['Variable'].values.tolist()[0]
@@ -750,13 +693,13 @@ def apscale_taxonomic_assignment(project_folder, settings_df):
 def create_report(project_folder):
     # collect information
     project_name = project_folder.name.replace('_apscale_nanopore', '')
-    read_table_file = project_folder.joinpath('7_ESV_table', f'{project_name}_swarms.parquet.snappy')
+    read_table_file = project_folder.joinpath('6_ESV_table', f'{project_name}_swarms.parquet.snappy')
     read_table_df = pd.read_parquet(read_table_file).fillna('')
-    taxonomy_table_file = project_folder.joinpath('8_taxonomic_assignment', project_name, f'{project_name}_taxonomy.xlsx')
+    taxonomy_table_file = project_folder.joinpath('7_taxonomic_assignment', project_name, f'{project_name}_taxonomy.xlsx')
     taxonomy_table_df = pd.read_excel(taxonomy_table_file).fillna('')
 
     # create folder to store batch results
-    report_folder = project_folder.joinpath('9_nanopore_report')
+    report_folder = project_folder.joinpath('8_nanopore_report')
     os.makedirs(report_folder, exist_ok=True)
 
     # Count previous runs
@@ -843,8 +786,8 @@ def main():
     elif args.command == 'run':
 
         # Collect step information
-        all_steps = {"1": "Index demultiplexing", "2": "Tag demultiplexing", "3": "Primer trimming",
-                     "4": "Quality filtering", "5": "Denoising", "6": "ESV table", "7": "Tax. assignment"}
+        all_steps = {"1": "Index demultiplexing", "2": "Primer trimming",
+                     "3": "Quality filtering", "4": "Denoising", "5": "ESV table", "6": "Tax. assignment"}
         if args.step:
             steps = [all_steps[args.step]]
         elif args.steps:

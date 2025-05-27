@@ -26,33 +26,21 @@ import itertools
 import time
 
 # All settings
-# 1.1) Index Error
 index_error_values = [i for i in range(1,4)]
-# 1.2) Primer Error
 primer_error_values = [i for i in range(1,4)]
-# 1.2) Tag Error
-tag_error_values = [2]
-# 2) Truncation quality
-truncvalue = [i for i in range(20,41,10)]
-# 3) Sequence length
+minq = [i for i in range(10,41,10)]
 target_len = 64
 plus_minus = [i for i in range(10,21,10)]
 maxmin_values = [[target_len+i, target_len-i] for i in plus_minus]
-# 4) Maxee value
-maxee_values = [i for i in range(1,4)]
-# 5) Swarm's d value
-d_values = [1]
-# 5) Min readsvalue
+d_values = [1,2,3]
 min_read_values = [2,10,20]
 
 # Generate all combinations
 combinations = list(itertools.product(
     index_error_values,
     primer_error_values,
-    tag_error_values,
-    truncvalue,
+    minq,
     maxmin_values,
-    maxee_values,
     d_values,
     min_read_values
 ))
