@@ -37,6 +37,10 @@ To update apscale-blast run:
 
 The easiest installation option is the [Conda apscale environment](https://github.com/TillMacher/apscale_installer). This way, all dependencies will automatically be installed.
 
+Then activate the conda environment.
+
+`conda activate apscale`
+
 ## Create project
 
 First, create a new project:
@@ -55,9 +59,9 @@ A new project will be created. Follow the instructions and fill out the settings
 │   └───data
 ├───4_quality_filtering
 │   └───data
-├───5_denoising
+├───5_clustering_denoising
 │   └───data
-├───6_ESV_table
+├───6_read_table
 │   └───data
 ├───7_taxonomic_assignment
 │   └───data
@@ -154,7 +158,7 @@ Example: Run all steps after the "quality filtering":
 
 `apscale_nanopore run -p PATH/TO/PROJECT -steps 3`
 
-# Quality control
+## Quality control
 
 A quality control can be conducted for all fastq files. Simply run:
 
