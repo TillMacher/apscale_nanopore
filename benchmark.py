@@ -1,3 +1,4 @@
+# Imports
 import argparse
 import glob
 import multiprocessing
@@ -15,168 +16,147 @@ from joblib import Parallel, delayed
 from Bio import SeqIO
 import hashlib
 from collections import defaultdict
-import multiprocessing
-import os
-import platform
-import subprocess
-import time
 from Bio.SeqIO import SeqRecord
 from Bio.Seq import Seq
 import itertools
-import time
 
-# All settings
-index_error_values = [i for i in range(1,4)]
-primer_error_values = [i for i in range(1,4)]
-minq = [i for i in range(10,41,10)]
+# =====================
+# === USER SETTINGS ===
+# =====================
+
+# Base Project Path
+BASE_PROJECT_PATH = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore')
+
+# Input/Output Files
+REFERENCE_FILE = BASE_PROJECT_PATH / '9_benchmark/merged_main_new/merged_main_new_taxonomy.xlsx'
+NANOPORE_FILE = BASE_PROJECT_PATH / '7_taxonomic_assignment/test_dataset/test_dataset_taxonomy.xlsx'
+RESULTS_FILE = BASE_PROJECT_PATH / '9_benchmark/benchmark_results.xlsx'
+
+# Intermediate Files & Folders
+DEMUX_INDEX_PATH = BASE_PROJECT_PATH / '2_index_demultiplexing/data'
+MERGED_FASTQ_SRC = BASE_PROJECT_PATH / '1_raw_data/tmp/merged_nanopore_data.fastq.gz'
+MERGED_FASTQ_DST = BASE_PROJECT_PATH / '1_raw_data/data/merged_nanopore_data.fastq.gz'
+
+# =====================
+# === SETTINGS LOGIC ===
+# =====================
+
+index_error_values = [i for i in range(1, 4)]
+primer_error_values = [i for i in range(1, 4)]
+minq = [i for i in range(10, 41, 10)]
 target_len = 64
-plus_minus = [i for i in range(10,21,10)]
-maxmin_values = [[target_len+i, target_len-i] for i in plus_minus]
-d_values = [1,2,3]
-min_read_values = [2,10,20]
+plus_minus = [i for i in range(10, 21, 10)]
+maxmin_values = [[target_len + i, target_len - i] for i in plus_minus]
+mode = ['OTUs', 'ESVs', 'Swarms', 'Denoised OTUs']
+percid_values = [0.97, 0.98, 0.99]
+alpha_values = [1, 2, 3]
+d_values = [1, 2, 3]
+min_read_values = [2, 10]
 
-# Generate all combinations
-combinations = list(itertools.product(
-    index_error_values,
-    primer_error_values,
-    minq,
-    maxmin_values,
-    d_values,
-    min_read_values
-))
+combinations = []
 
-n_combinations = len(combinations) # 1350 combinations
-print(f'Number of test combinations: {n_combinations}')
+# Generate valid combinations
+for idx_err in index_error_values:
+    for prim_err in primer_error_values:
+        for q in minq:
+            for maxmin in maxmin_values:
+                for m in mode:
+                    for min_reads in min_read_values:
+                        if m == 'OTUs':
+                            for percid in percid_values:
+                                combinations.append((idx_err, prim_err, q, maxmin[1], maxmin[0], m, percid, 1, 1, min_reads))
+                        elif m == 'ESVs':
+                            for alpha in alpha_values:
+                                combinations.append((idx_err, prim_err, q, maxmin[1], maxmin[0], m, 1, alpha, 1, min_reads))
+                        elif m == 'Swarms':
+                            for d in d_values:
+                                combinations.append((idx_err, prim_err, q, maxmin[1], maxmin[0], m, 1, 1, d, min_reads))
+                        elif m == 'Denoised OTUs':
+                            for percid in percid_values:
+                                for alpha in alpha_values:
+                                    combinations.append((idx_err, prim_err, q, maxmin[1], maxmin[0], m, percid, alpha, 1, min_reads))
+
+print(f'Number of test combinations: {len(combinations)}')
+
 res = []
+existing_ids = pd.read_excel(RESULTS_FILE).fillna('')['id'].tolist() if RESULTS_FILE.exists() else []
 
-combinations_file = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/10_benchmark/benchmark_results.xlsx')
-if combinations_file.exists():
-    combinations_df = pd.read_excel(combinations_file).fillna('')
-    existing_ids = combinations_df['id'].values.tolist()
-else:
-    existing_ids = []
+combinations = [combinations[-1]]
 
 for combination in combinations:
-
-    # record start time
     start_time = time.time()
 
-    # Collect settings
-    e_index_value = combination[0]
-    e_primer_value = combination[1]
-    e_tag_value = combination[2]
-    t_value = combination[3]
-    max_value = combination[4][0]
-    min_value = combination[4][1]
-    maxee_value = combination[5]
-    d_value = combination[6]
-    minreads_value = combination[7]
+    e_index_value, e_primer_value, minq_value, min_value, max_value, mode_value, percid_value, alpha_value, d_value, minreads_value = combination
 
-    # Save settings
-    id ='-'.join([str(i) for i in [e_index_value, e_primer_value, e_tag_value, t_value, max_value, min_value, maxee_value, d_value, minreads_value]])
+    id = '-'.join([str(i) for i in combination])
     run = [id]
 
     if id in existing_ids:
         print(f'Combination "{id}" already exists.')
-    else:
-        run.extend([e_index_value, e_primer_value, e_tag_value, t_value, max_value, min_value, maxee_value, d_value, minreads_value])
+        continue
 
-        # Run apscale nanopore
-        command = f"python3 /Users/tillmacher/Documents/GitHub/apscale_nanopore/apscale_nanopore/__main__.py run -p /Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore -e1 {e_index_value} -e2 {e_primer_value} -e3 {e_tag_value} -minlen {min_value} -maxlen {max_value} -maxee {maxee_value} -d {d_value} -t {t_value} -minreads {minreads_value}"
-        process = subprocess.Popen(command, shell=True, text=True)
-        process.wait()
+    run += list(combination)
 
-        # Compare results and create report
-        # Reference
-        reference_df = pd.read_excel('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/10_benchmark/merged_main_new/merged_main_new_taxonomy.xlsx').fillna('')
-        reference_ESVs = reference_df['unique ID'].values.tolist()
-        reference_ESVs_n = len(reference_ESVs)
-        reference_species = [i for i in reference_df['Species'].drop_duplicates().values.tolist() if i != '']
-        reference_genera = [i for i in reference_df['Genus'].drop_duplicates().values.tolist() if i != '']
-        reference_families = [i for i in reference_df['Family'].drop_duplicates().values.tolist() if i != '']
+    command = (
+        f"apscale_nanopore run -p {BASE_PROJECT_PATH} "
+        f"-e1 {e_index_value} -e2 {e_primer_value} -minq {minq_value} "
+        f"-minlen {min_value} -maxlen {max_value} -mode \"{mode_value}\" "
+        f"-percid {percid_value} -alpha {alpha_value} -d {d_value} -minreads {minreads_value}"
+    )
+    subprocess.run(command, shell=True, text=True)
 
-        # Nanopore
-        nanopore_df = pd.read_excel('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/8_taxonomic_assignment/test_dataset/test_dataset_taxonomy.xlsx').fillna('')
-        nanopore_ESVs = nanopore_df['unique ID'].values.tolist()
-        nanopore_ESVs_n = len(nanopore_ESVs)
-        nanopore_species = [i for i in nanopore_df['Species'].drop_duplicates().values.tolist() if i != '']
-        nanopore_genera = [i for i in nanopore_df['Genus'].drop_duplicates().values.tolist() if i != '']
-        nanopore_families = [i for i in nanopore_df['Family'].drop_duplicates().values.tolist() if i != '']
+    # Load and compare
+    ref_df = pd.read_excel(REFERENCE_FILE).fillna('')
+    test_df = pd.read_excel(NANOPORE_FILE).fillna('')
 
-        # Comparison
-        # ESVs
-        reference_only = len(set(reference_ESVs) - set(nanopore_ESVs))
-        shared = len(set(reference_ESVs) & set(nanopore_ESVs))
-        nanopore_only = len(set(nanopore_ESVs) - set(reference_ESVs))
-        # Save settings
-        run.extend([reference_only, shared, nanopore_only])
+    def get_unique(df, col):
+        return [i for i in df[col].drop_duplicates().values.tolist() if i != '']
 
-        # Species
-        reference_only = len(set(reference_species) - set(nanopore_species))
-        shared = len(set(reference_species) & set(nanopore_species))
-        nanopore_only = len(set(nanopore_species) - set(reference_species))
-        # Save settings
-        run.extend([reference_only, shared, nanopore_only])
+    comparisons = []
+    for col in ['unique ID', 'Species', 'Genus', 'Family']:
+        ref_set = set(get_unique(ref_df, col))
+        test_set = set(get_unique(test_df, col))
+        comparisons += [len(ref_set - test_set), len(ref_set & test_set), len(test_set - ref_set)]
 
-        # Genera
-        reference_only = len(set(reference_genera) - set(nanopore_genera))
-        shared = len(set(reference_genera) & set(nanopore_genera))
-        nanopore_only = len(set(nanopore_genera) - set(reference_genera))
-        # Save settings
-        run.extend([reference_only, shared, nanopore_only])
+    run += comparisons
+    run.append(round(time.time() - start_time, 2))
+    res.append(run)
 
-        # Families
-        reference_only = len(set(reference_families) - set(nanopore_families))
-        shared = len(set(reference_families) & set(nanopore_families))
-        nanopore_only = len(set(nanopore_families) - set(reference_families))
-        # Save settings
-        run.extend([reference_only, shared, nanopore_only])
+    # Cleanup
+    if DEMUX_INDEX_PATH.exists():
+        shutil.rmtree(DEMUX_INDEX_PATH)
+        os.makedirs(DEMUX_INDEX_PATH, exist_ok=True)
 
-        # record end time
-        end_time = time.time()
-        # calculate elapsed time
-        elapsed_time = end_time - start_time
-        run.append(elapsed_time)
+    # shutil.move(str(MERGED_FASTQ_SRC), str(MERGED_FASTQ_DST))
 
-        res.append(run)
+    # Write progress
+    df = pd.DataFrame(res)
+    df.columns = ['id', 'index_error', 'primer_error', 'minq', 'minlen', 'maxlen', 'mode', 'percid', 'alpha', 'd', 'minreads',
+                  'ESVs_ref', 'ESVs_shared', 'ESVs_only', 'Species_ref', 'Species_shared', 'Species_only',
+                  'Genus_ref', 'Genus_shared', 'Genus_only', 'Family_ref', 'Family_shared', 'Family_only', 'elapsed_time']
+    df_comb = pd.concat([df, pd.read_excel(RESULTS_FILE).fillna('') if RESULTS_FILE.exists() else pd.DataFrame()], ignore_index=True)
 
-        # Clean-up
-        demultiplexing_folder = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/2_index_demultiplexing/data')
-        if demultiplexing_folder.exists():
-            shutil.rmtree(demultiplexing_folder)
-            os.makedirs(demultiplexing_folder, exist_ok=True)
+    sens_prec = []
+    for _, row in df_comb.iterrows():
+        row_res = []
+        for prefix in ['ESVs', 'Species', 'Genus', 'Family']:
+            TP = row[f'{prefix}_shared'] + row[f'{prefix}_ref']
+            FN = row[f'{prefix}_ref']
+            FP = row[f'{prefix}_only']
+            sens = round(TP / (TP + FN), 2) if TP + FN > 0 else 0
+            prec = round(TP / (TP + FP), 2) if TP + FP > 0 else 0
+            row_res.extend([sens, prec])
+        sens_prec.append(row_res)
 
-        demultiplexing_folder = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/4_tag_demultiplexing/data')
-        if demultiplexing_folder.exists():
-            shutil.rmtree(demultiplexing_folder)
-            os.makedirs(demultiplexing_folder, exist_ok=True)
+    df_metrics = pd.DataFrame(sens_prec, columns=[
+        'ESVs_sensitivity', 'ESVs_precision', 'Species_sensitivity', 'Species_precision',
+        'Genus_sensitivity', 'Genus_precision', 'Family_sensitivity', 'Family_precision'])
 
-        main_file = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/1_raw_data/tmp/merged_nanopore_data.fastq.gz')
-        moved_main_file = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/1_raw_data/data/merged_nanopore_data.fastq.gz')
-        shutil.move(main_file, moved_main_file)
+    df_final = pd.concat([df_comb, df_metrics], axis=1)
+    df_final.to_excel(RESULTS_FILE, index=False)
 
-        # Write Excel
-        df = pd.DataFrame(res)
-        df.columns = ['id', 'index_error', 'primer_error', 'tag_error' ,'truncation', 'maxlen', 'minlen', 'maxee', 'd', 'minreads', 'ESVs reference', 'ESVs shared', 'ESVs nanopore', 'Species reference', 'Species shared', 'Species nanopore', 'Genus reference', 'Genus shared', 'Genus nanopore', 'Family reference', 'Family shared', 'Family nanopore', 'elapsed_time']
-        df2 = pd.concat([df, combinations_df], ignore_index=True)
 
-        res = []
-        for _, row in df2.iterrows():
-            res_row = []
-            for test in ['ESVs', 'Species', 'Genus', 'Family']:
-                # calculate sensitivity and precision
-                # -> s = TP/(TP+FN)
-                # -> p = TP/(TP+FP)
-                # ESV sensitivity and precision
-                TP = row[f'{test} reference'] + row[f'{test} shared']
-                FN = row[f'{test} reference']
-                FP = row[f'{test} nanopore']
-                sensitivity = round(TP/(TP+FN),2)
-                precision = round(TP/(TP+FP), 2)
-                res_row.extend([sensitivity,precision])
-            res.append(res_row)
 
-        df3 = pd.DataFrame(res, columns=['ESVs sensitivity', 'ESVs precision', 'Species sensitivity', 'Species precision', 'Genus sensitivity', 'Genus precision', 'Family sensitivity', 'Family precision'])
-        df4 = pd.concat([df2, df3], axis=1)
-        df4.to_excel('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/10_benchmark/benchmark_results.xlsx', index=False)
+
+
 

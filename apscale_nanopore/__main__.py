@@ -23,9 +23,9 @@ from Bio.Seq import reverse_complement, Seq
 import numpy as np
 import plotly.graph_objects as go
 
-# project_folder = Path('/Volumes/Coruscant/APSCALE_projects/DELETE_TEST_apscale_nanopore')
-# settings_df = pd.read_excel('/Volumes/Coruscant/APSCALE_projects/DELETE_TEST_apscale_nanopore/DELETE_TEST_settings.xlsx', sheet_name='Settings')
-# demultiplexing_df = pd.read_excel('/Volumes/Coruscant/APSCALE_projects/DELETE_TEST_apscale_nanopore/DELETE_TEST_settings.xlsx', sheet_name='Demultiplexing').fillna('')
+# project_folder = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore')
+# settings_df = pd.read_excel('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/test_dataset_settings.xlsx', sheet_name='Settings')
+# demultiplexing_df = pd.read_excel('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/test_dataset_settings.xlsx', sheet_name='Demultiplexing').fillna('')
 # cpu_count = 7
 # project_settings_files = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/test_dataset_settings.xlsx'
 # read_length_limit = 1000
@@ -357,7 +357,7 @@ def apscale_nanopore(project_folder, settings_df, demultiplexing_df, steps, skip
     print(f'{datetime.now().strftime("%H:%M:%S")} - Scanning for files...')
     main_files = [i for i in glob.glob(str(raw_data_folder.joinpath('*.fastq*')))]
     main_files = {Path(file).name:Path(file) for file in main_files}
-    print(f'{datetime.now().strftime("%H:%M:%S")} - Print found {len(main_files)} fastq raw data files.')
+    print(f'{datetime.now().strftime("%H:%M:%S")} - Found {len(main_files)} fastq raw data files.')
     print('')
 
     # Collect number of available CPUs
@@ -544,7 +544,7 @@ def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demult
 def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_df, skip_demultiplexing):
 
     # Preprare output files
-    # file = '/Volumes/Coruscant/APSCALE_projects/DELETE_TEST_apscale_nanopore/2_index_demultiplexing/data/3_subset.fastq.gz'
+    # file = '/Volumes/Coruscant/APSCALE_projects/test_dataset_apscale_nanopore/2_index_demultiplexing/data/3_subset.fastq.gz'
     input_file = Path(file)
     name = input_file.name.replace('.fastq', '').replace('.gz', '')
     output_folder_data = project_folder.joinpath('3_primer_trimming', 'data')
@@ -747,10 +747,11 @@ def create_read_table(project_folder, settings_df):
 
     # Collect required settings
     min_reads = settings_df[settings_df['Category'] == 'minimum reads']['Variable'].values.tolist()[0]
+    mode = settings_df[settings_df['Category'] == 'mode']['Variable'].values.tolist()[0]
 
     # Parse files
     for file in sorted(swarm_files):
-        sample = file.name.replace('_centroids.fasta', '')
+        sample = file.name.replace('_clusters_nochimera.fasta', '')
         with open(file) as handle:
             for record in SeqIO.parse(handle, "fasta"):
                 size = int(record.id.split(';')[1].replace('size=', ''))
@@ -782,15 +783,15 @@ def create_read_table(project_folder, settings_df):
     removed = total_reads_before - total_reads_after
     n_swarms = len(df)
     swarms_discarded = n_swarms_before - n_swarms
-    print(f'{datetime.now():%H:%M:%S} - Final read table contains {n_swarms:,} swarms accounting for {total_reads_after:,} reads.')
-    print(f'{datetime.now():%H:%M:%S} - Discarded {swarms_discarded:,} swarms accounting for {removed:,} reads (<= {min_reads} reads).')
+    print(f'{datetime.now():%H:%M:%S} - Final read table contains {n_swarms:,} {mode} accounting for {total_reads_after:,} reads.')
+    print(f'{datetime.now():%H:%M:%S} - Discarded {swarms_discarded:,} {mode} accounting for {removed:,} reads (<= {min_reads} reads).')
 
     # Final clean-up
     df.drop(columns='sum', inplace=True)
 
     # insert empty files
     for file in sorted(swarm_files):
-        sample = file.name.replace('_centroids.fasta', '')
+        sample = file.name.replace('_clusters_nochimera.fasta', '')
         if sample not in list(df.columns):
             df[sample] = [0] * len(df)
 
@@ -1035,6 +1036,8 @@ def main():
                 index = settings_df[settings_df['Category'] == 'minimum reads'].index[0]
                 settings_df.loc[index, 'Variable'] = args.minreads
                 print(f"Adjusted value: Read filter threshold: {args.minreads}")
+
+            print('')
 
             # =======# Live processing #=======#
             if args.live_calling == True:
