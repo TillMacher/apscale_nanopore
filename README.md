@@ -216,7 +216,7 @@ Apply a minimum read threshold to remove low-abundance features.
 
 ### 6) Taxonomic Assignment
 
-**Tool:** `BLASTn` via [`apscale-blast`](https://github.com/TillMacher/apscale-blast) 
+**Tool:** `BLASTn` via [`apscale-blast`](https://github.com/TillMacher/apscale_blast) 
 
 Assign taxonomy to representative sequences using a local reference database.
 
