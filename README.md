@@ -3,7 +3,7 @@ Advanced Pipeline for Simple yet Comprehensive AnaLysEs of DNA metabarcoding dat
 
 [![Downloads](https://static.pepy.tech/badge/apscale)](https://pepy.tech/project/apscale)  - apscale
 
-[![Downloads](https://static.pepy.tech/badge/apscale-blast)](https://pepy.tech/project/apscale-blast)  - apscale_blast
+[![Downloads](https://static.pepy.tech/badge/apscale-blast)](https://pepy.tech/project/apscale-nanopore)  - apscale-nanopore
 
 # apscale-nanopore
 
