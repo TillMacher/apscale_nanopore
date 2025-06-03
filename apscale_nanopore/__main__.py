@@ -877,10 +877,11 @@ def main():
 
     # Introductory message with usage examples
     message = """
-    APSCALE nanopore command line tool - v1.0.2
+    APSCALE nanopore command line tool - v1.0.3
     Example commands:
-    $ apscale_nanopore create my_new_project
-    $ apscale_nanopore run my_new_project
+    $ apscale_nanopore create -p PATH/TO/PROJECT
+    $ apscale_nanopore run -p PATH/TO/PROJECT
+    $ apscale_nanopore qc -p PATH/TO/PROJECT
 
     """
     print(message)
