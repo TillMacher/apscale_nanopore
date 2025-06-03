@@ -877,7 +877,7 @@ def main():
 
     # Introductory message with usage examples
     message = """
-    APSCALE nanopore command line tool - v1.0.3
+    APSCALE nanopore command line tool
     Example commands:
     $ apscale_nanopore create -p PATH/TO/PROJECT
     $ apscale_nanopore run -p PATH/TO/PROJECT
@@ -887,7 +887,7 @@ def main():
     print(message)
 
     # Initialize main parser
-    parser = argparse.ArgumentParser(description='APSCALE nanopore v0.0.1')
+    parser = argparse.ArgumentParser(description='APSCALE nanopore')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # === Subparser: create ===
