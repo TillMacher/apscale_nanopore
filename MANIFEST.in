@@ -1,1 +1,1 @@
-recursive-include apscale_nanopore/*.xlsx
+recursive-include apscale_nanopore *.xlsx

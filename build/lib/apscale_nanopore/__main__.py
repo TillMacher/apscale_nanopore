@@ -23,9 +23,9 @@ from Bio.Seq import reverse_complement, Seq
 import numpy as np
 import plotly.graph_objects as go
 
-# project_folder = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/')
-# settings_df = pd.read_excel('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/test_dataset_settings.xlsx', sheet_name='Settings')
-# demultiplexing_df = pd.read_excel('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/test_dataset_settings.xlsx', sheet_name='Demultiplexing').fillna('')
+# project_folder = Path('/Volumes/Coruscant/APSCALE_projects/DELETE_TEST_apscale_nanopore')
+# settings_df = pd.read_excel('/Volumes/Coruscant/APSCALE_projects/DELETE_TEST_apscale_nanopore/DELETE_TEST_settings.xlsx', sheet_name='Settings')
+# demultiplexing_df = pd.read_excel('/Volumes/Coruscant/APSCALE_projects/DELETE_TEST_apscale_nanopore/DELETE_TEST_settings.xlsx', sheet_name='Demultiplexing').fillna('')
 # cpu_count = 7
 # project_settings_files = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/test_dataset_settings.xlsx'
 # read_length_limit = 1000
@@ -192,7 +192,7 @@ def open_file(filepath):
 def create_project(project_folder, project_name):
 
     # Create subfolders
-    sub_folders = ['1_raw_data', '2_index_demultiplexing', '3_primer_trimming', '4_quality_filtering', '5_denoising', '6_ESV_table', '7_taxonomic_assignment', '8_nanopore_report']
+    sub_folders = ['1_raw_data', '2_index_demultiplexing', '3_primer_trimming', '4_quality_filtering', '5_clustering_denoising', '6_read_table', '7_taxonomic_assignment', '8_nanopore_report']
 
     for folder in sub_folders:
         folder_path = project_folder.joinpath(folder)
@@ -303,7 +303,7 @@ def apscale_nanopore_watch_folder(project_folder, settings_df, demultiplexing_df
                 if "Primer trimming" in steps:
                     print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt primer trimming...')
                     fastq_files = glob.glob(str(project_folder.joinpath('2_index_demultiplexing', 'data', '*.fastq*')))
-                    Parallel(n_jobs=cpu_count, backend='loky')(delayed(cutadapt_primer_trimming)(project_folder, fastq_file, settings_df, demultiplexing_df) for fastq_file in fastq_files)
+                    Parallel(n_jobs=cpu_count, backend='loky')(delayed(cutadapt_primer_trimming)(project_folder, fastq_file, settings_df, demultiplexing_df, skip_demultiplexing) for fastq_file in fastq_files)
                     print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt primer trimming!')
                     print('')
 
@@ -316,7 +316,7 @@ def apscale_nanopore_watch_folder(project_folder, settings_df, demultiplexing_df
                     print('')
 
                 #=======# Denoising #=======#
-                if "Denoising" in steps:
+                if "Clustering/denoising" in steps:
                     print(f'{datetime.now().strftime("%H:%M:%S")} - Starting clustering/denoising...')
                     fasta_files = glob.glob(str(project_folder.joinpath('4_quality_filtering', 'data', '*.fasta')))
                     Parallel(n_jobs=cpu_count, backend='loky')(delayed(clustering_denoising)(project_folder, fasta_file, settings_df) for fasta_file in fasta_files)
@@ -324,7 +324,7 @@ def apscale_nanopore_watch_folder(project_folder, settings_df, demultiplexing_df
                     print('')
 
                 #=======# Read table #=======#
-                if "ESV table" in steps:
+                if "Read table" in steps:
                     print(f'{datetime.now().strftime("%H:%M:%S")} - Starting to build read table...')
                     create_read_table(project_folder, settings_df)
                     print(f'{datetime.now().strftime("%H:%M:%S")} - Finished building read table!')
@@ -405,7 +405,7 @@ def apscale_nanopore(project_folder, settings_df, demultiplexing_df, steps, skip
     if "Primer trimming" in steps:
         print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt primer trimming...')
         fastq_files = glob.glob(str(project_folder.joinpath('2_index_demultiplexing', 'data', '*.fastq*')))
-        Parallel(n_jobs=cpu_count, backend='loky')(delayed(cutadapt_primer_trimming)(project_folder, fastq_file, settings_df, demultiplexing_df) for fastq_file in fastq_files)
+        Parallel(n_jobs=cpu_count, backend='loky')(delayed(cutadapt_primer_trimming)(project_folder, fastq_file, settings_df, demultiplexing_df, skip_demultiplexing) for fastq_file in fastq_files)
         print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt primer trimming!')
         print('')
 
@@ -418,7 +418,7 @@ def apscale_nanopore(project_folder, settings_df, demultiplexing_df, steps, skip
         print('')
 
     #=======# Denoising #=======#
-    if "Denoising" in steps:
+    if "Clustering/denoising" in steps:
         print(f'{datetime.now().strftime("%H:%M:%S")} - Starting clustering/denoising...')
         fasta_files = glob.glob(str(project_folder.joinpath('4_quality_filtering', 'data', '*.fasta')))
         Parallel(n_jobs=cpu_count, backend='loky')(delayed(clustering_denoising)(project_folder, fasta_file, settings_df) for fasta_file in fasta_files)
@@ -426,7 +426,7 @@ def apscale_nanopore(project_folder, settings_df, demultiplexing_df, steps, skip
         print('')
 
     #=======# Read table #=======#
-    if "ESV table" in steps:
+    if "Read table" in steps:
         print(f'{datetime.now().strftime("%H:%M:%S")} - Starting to build read table...')
         create_read_table(project_folder, settings_df)
         print(f'{datetime.now().strftime("%H:%M:%S")} - Finished building read table!')
@@ -541,10 +541,10 @@ def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demult
 
     Parallel(n_jobs=-1, backend='loky')(delayed(merge_fastq_files)(tmp_file_fwd, tmp_file_rc, output_folder_data) for tmp_file_fwd, tmp_file_rc in zip(demultiplexed_fwd_files, demultiplexed_rc_files))
 
-def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_df):
+def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_df, skip_demultiplexing):
 
     # Preprare output files
-    # file = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/2_index_demultiplexing/data/Sample_3.fastq.gz'
+    # file = '/Volumes/Coruscant/APSCALE_projects/DELETE_TEST_apscale_nanopore/2_index_demultiplexing/data/3_subset.fastq.gz'
     input_file = Path(file)
     name = input_file.name.replace('.fastq', '').replace('.gz', '')
     output_folder_data = project_folder.joinpath('3_primer_trimming', 'data')
@@ -565,7 +565,7 @@ def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_d
     # Run cutadapt demultiplexing
     # Create forward sequence
     # Check if index demultiplexing is required
-    if '' in demultiplexing_df['Forward index 5-3'].values.tolist():
+    if skip_demultiplexing == True:
         sub_df = demultiplexing_df.head(1)
     else:
         sub_df = demultiplexing_df[demultiplexing_df['ID'] == name]
@@ -678,8 +678,8 @@ def clustering_denoising(project_folder, file, settings_df):
     # file = '/Volumes/Coruscant/APSCALE_projects/naturalis_dataset_apscale_nanopore/4_quality_filtering/data/naturalis_sample_35_trimmed_filtered_derep.fasta'
     input_file = Path(file)
     name = input_file.name.replace('_trimmed_filtered_derep.fasta', '')
-    output_folder_data = project_folder.joinpath('5_denoising', 'data')
-    cluster_file = output_folder_data.joinpath(f'{name}_clusters.fasta')
+    output_folder_data = project_folder.joinpath('5_clustering_denoising', 'data')
+    cluster_file = output_folder_data.joinpath(f'{name}_centroids.fasta')
 
     # Collect required settings
     mode = settings_df[settings_df['Category'] == 'mode']['Variable'].values.tolist()[0]
@@ -740,7 +740,7 @@ def clustering_denoising(project_folder, file, settings_df):
 
 def create_read_table(project_folder, settings_df):
     # Prepare output files
-    swarm_files_path = project_folder.joinpath('5_denoising', 'data', '*_clusters_nochimera.fasta')
+    swarm_files_path = project_folder.joinpath('5_clustering_denoising', 'data', '*_clusters_nochimera.fasta')
     swarm_files = [Path(i) for i in glob.glob(str(swarm_files_path))]
     data = defaultdict(lambda: defaultdict(int))  # nested dict: hash -> sample -> size
     seq_dict = {}  # hash -> sequence
@@ -750,7 +750,7 @@ def create_read_table(project_folder, settings_df):
 
     # Parse files
     for file in sorted(swarm_files):
-        sample = file.name.replace('_clusters.fasta', '')
+        sample = file.name.replace('_centroids.fasta', '')
         with open(file) as handle:
             for record in SeqIO.parse(handle, "fasta"):
                 size = int(record.id.split(';')[1].replace('size=', ''))
@@ -790,7 +790,7 @@ def create_read_table(project_folder, settings_df):
 
     # insert empty files
     for file in sorted(swarm_files):
-        sample = file.name.replace('_clusters.fasta', '')
+        sample = file.name.replace('_centroids.fasta', '')
         if sample not in list(df.columns):
             df[sample] = [0] * len(df)
 
@@ -799,13 +799,13 @@ def create_read_table(project_folder, settings_df):
 
     # Write to files
     if df.shape[0] < 65000:
-        excel_file = project_folder.joinpath('6_ESV_table', f'{project_name}_swarms.xlsx')
+        excel_file = project_folder.joinpath('6_read_table', f'{project_name}_read_table.xlsx')
         df.to_excel(excel_file, index=False)
-    parquet_file = project_folder.joinpath('6_ESV_table', f'{project_name}_swarms.parquet.snappy')
+    parquet_file = project_folder.joinpath('6_read_table', f'{project_name}_read_table.parquet.snappy')
     df.to_parquet(parquet_file, compression='snappy')
 
     # Write sequences to fasta
-    fasta_file = project_folder.joinpath('6_ESV_table', 'data', f'{project_name}_clusters.fasta')
+    fasta_file = project_folder.joinpath('6_read_table', 'data', f'{project_name}_centroids.fasta')
     with open(fasta_file, "w") as output_handle:
         for hash, seq in df[['ID', 'Seq']].values.tolist():
             record = SeqRecord(Seq(seq), id=hash, description='')
@@ -814,7 +814,7 @@ def create_read_table(project_folder, settings_df):
 def apscale_taxonomic_assignment(project_folder, settings_df):
     # Define files
     project_name = project_folder.name.replace('_apscale_nanopore', '')
-    fasta_file = project_folder.joinpath('6_ESV_table', 'data', f'{project_name}_clusters.fasta')
+    fasta_file = project_folder.joinpath('6_read_table', 'data', f'{project_name}_centroids.fasta')
     results_folder = project_folder.joinpath('7_taxonomic_assignment', project_name)
 
     # Collect variables
@@ -835,7 +835,7 @@ def apscale_taxonomic_assignment(project_folder, settings_df):
 def create_report(project_folder):
     # collect information
     project_name = project_folder.name.replace('_apscale_nanopore', '')
-    read_table_file = project_folder.joinpath('6_ESV_table', f'{project_name}_swarms.parquet.snappy')
+    read_table_file = project_folder.joinpath('6_read_table', f'{project_name}_swarms.parquet.snappy')
     read_table_df = pd.read_parquet(read_table_file).fillna('')
     taxonomy_table_file = project_folder.joinpath('7_taxonomic_assignment', project_name, f'{project_name}_taxonomy.xlsx')
     taxonomy_table_df = pd.read_excel(taxonomy_table_file).fillna('')
@@ -877,7 +877,7 @@ def main():
 
     # Introductory message with usage examples
     message = """
-    APSCALE nanopore command line tool - v0.0.1
+    APSCALE nanopore command line tool - v1.0.2
     Example commands:
     $ apscale_nanopore create my_new_project
     $ apscale_nanopore run my_new_project
@@ -928,11 +928,11 @@ def main():
     run_parser.add_argument('-step', type=str, help="Select step to re-run individually. "
                                                     "1:Index demultiplexing, 2:Primer trimming, "
                                                     "3:Tag demultiplexing, 4:Quality filtering, "
-                                                    "5:Denoising, 6:ESV table, 7:Tax. assignment ")
+                                                    "5:Clustering/denoising, 6:Read table, 7:Tax. assignment ")
     run_parser.add_argument('-steps', type=str, help="Select step from which to re-run all subsequent steps. "
                                                     "1:Index demultiplexing, 2:Primer trimming, "
                                                     "3:Tag demultiplexing, 4:Quality filtering, "
-                                                    "5:Denoising, 6:ESV table, 7:Tax. assignment ")
+                                                    "5:Clustering/denoising, 6:Read table, 7:Tax. assignment ")
 
     # Parse arguments
     args = parser.parse_args()
@@ -962,7 +962,7 @@ def main():
 
         # Collect step information
         all_steps = {"1": "Index demultiplexing", "2": "Primer trimming",
-                     "3": "Quality filtering", "4": "Denoising", "5": "ESV table", "6": "Tax. assignment"}
+                     "3": "Quality filtering", "4": "Clustering/denoising", "5": "Read table", "6": "Tax. assignment"}
         if args.step:
             steps = [all_steps[str(args.step)]]
         elif args.steps:
