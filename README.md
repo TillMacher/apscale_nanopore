@@ -100,7 +100,7 @@ My_new_project_settings.xlsx
 
 Apscale-nanopore operates in four different ways:
 
-1) Raw-data processing of non-demultiplexed data
+### 1) Raw-data processing of non-demultiplexed data
 
 * Copy your non-demultiplexed .fastq(.gz) files to the "1_raw_data/data" folder.
    
@@ -108,7 +108,7 @@ Apscale-nanopore operates in four different ways:
 
 * Apscale-nanopore will demultiplex all your files according to the demultiplexing sheet.
 
-2) Raw-data processing of demultiplexed data
+### 2) Raw-data processing of demultiplexed data
    
 * Copy your demultiplexed .fastq(.gz) files to the "1_raw_data/data" folder.
    
@@ -117,7 +117,7 @@ Apscale-nanopore operates in four different ways:
 * Apscale-nanopore will skip the demultiplexing and immediately start with the raw-data processing.
 * Important: Enter the primer sequences (5'-3') in the first row of the demultiplexing sheet. The index columns can be left blank.
 
-3) Live raw-data processing of non-demultiplexed data
+### 3) Live raw-data processing of non-demultiplexed data
    
 * Output your non-demultiplexed .fastq(.gz) files to the "1_raw_data/data" folder during sequencing.
    
@@ -125,7 +125,7 @@ Apscale-nanopore operates in four different ways:
 
 * Apscale-nanopore will demultiplex all your files according to the demultiplexing sheet.
 
-4) Live raw-data processing of demultiplexed data
+### 4) Live raw-data processing of demultiplexed data
    
 * Output your demultiplexed .fastq(.gz) files to the "1_raw_data/data" folder during sequencing.
    
@@ -133,6 +133,26 @@ Apscale-nanopore operates in four different ways:
 
 * Apscale-nanopore will skip the demultiplexing and immediately start with the raw-data processing.
 * Important: Enter the primer sequences (5'-3') in the first row of the demultiplexing sheet. The index columns can be left blank.
+
+### Run individual steps
+
+* Apscale can run individual steps (-step X) or all steps after a specific module (-steps X).
+
+Step indices:
+* 1 = Index demultiplexing
+* 2 = Primer trimming
+* 3 = Quality filtering
+* 4 = Clustering/denoising
+* 5 = Read table
+* 6 = Taxonomic assignment
+
+Example: Run "clustering/denoising"
+
+`apscale_nanopore run -p PATH/TO/PROJECT -step 4`
+
+Example: Run all steps after the "quality filtering":
+
+`apscale_nanopore run -p PATH/TO/PROJECT -steps 3`
 
 # Quality control
 
