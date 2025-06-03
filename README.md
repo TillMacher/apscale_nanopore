@@ -224,4 +224,6 @@ Assign taxonomy to representative sequences using a local reference database.
 
 ### 7) Quality Control and Reporting
 
+**Tool:** `python`
+
 Generate summary statistics and visual diagnostics.
