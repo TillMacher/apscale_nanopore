@@ -1,0 +1,62 @@
+Metadata-Version: 2.1
+Name: apscale_nanopore
+Version: 1.0.1
+Summary: Advanced Pipeline for Simple yet Comprehensive AnaLysEs of DNA metabarcoding data - Nanopore application
+Home-page: https://pypi.org/project/apscale_nanopore/
+Author: Till-Hendrik Macher
+Author-email: macher@uni-trier.de
+License: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: Bio>=1.7.1
+Requires-Dist: biopython>=1.85
+Requires-Dist: joblib>=1.4.2
+Requires-Dist: ete3>=3.1.3
+Requires-Dist: numpy>=1.26.4
+Requires-Dist: pandas>=2.2.3
+Requires-Dist: pyarrow>=19.0.0
+Requires-Dist: xmltodict>=0.14.2
+Requires-Dist: plotly>=6.1.1
+Requires-Dist: tqdm>=4.67.1
+
+# apscale
+Advanced Pipeline for Simple yet Comprehensive AnaLysEs of DNA metabarcoding data
+
+[![Downloads](https://static.pepy.tech/badge/apscale)](https://pepy.tech/project/apscale)  - apscale
+
+[![Downloads](https://static.pepy.tech/badge/apscale-blast)](https://pepy.tech/project/apscale-blast)  - apscale_blast
+
+# apscale-nanopore
+
+## Introduction
+Apscale-nanopore is a modified version of the metabarcoding pipeline [apscale](https://github.com/DominikBuchner/apscale/tree/main) and is used
+for the processing of Oxford Nanopore data.
+
+Programs used:
+* [cutadapt](https://github.com/marcelm/cutadapt) 
+* [vsearch](https://github.com/torognes/vsearch)
+* [swarm](https://github.com/torognes/swarm)
+* [blast+](https://blast.ncbi.nlm.nih.gov/doc/blast-help/downloadblastdata.html) (blastn module)
+
+Input:
+* Non-demultiplexed Nanopore sequence data in .fastq format.
+
+Output:
+* read table, taxonomy table, log files
+
+## Installation
+
+Apscale-nanopore can be installed on all common operating systems (Windows, Linux, MacOS).
+Apscale-nanopore requires Python 3.10 or higher and can be easily installed via pip in any command line:
+
+`pip install apscale_nanopore`
+
+To update apscale-blast run:
+
+`pip install --upgrade apscale_nanopore`
+
+The easiest installation option is the [Conda apscale environment](https://github.com/TillMacher/apscale_installer). This way, all dependencies will automatically be installed.

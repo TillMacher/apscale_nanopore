@@ -17,39 +17,39 @@ from joblib import Parallel, delayed
 from Bio import SeqIO
 import hashlib
 from collections import defaultdict
-import multiprocessing
-import os
 import platform
-import subprocess
-import time
 from Bio.SeqIO import SeqRecord
-from Bio.Seq import reverse_complement
-from Bio.Seq import Seq
-import statistics
+from Bio.Seq import reverse_complement, Seq
 import numpy as np
-import math
 import plotly.graph_objects as go
 
 # project_folder = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/')
 # settings_df = pd.read_excel('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/test_dataset_settings.xlsx', sheet_name='Settings')
 # demultiplexing_df = pd.read_excel('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/test_dataset_settings.xlsx', sheet_name='Demultiplexing').fillna('')
 # cpu_count = 7
+# project_settings_files = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/test_dataset_settings.xlsx'
+# read_length_limit = 1000
 
-def quality_report(project_folder, sub_folder, compressed):
+def quality_report(project_folder, sub_folder):
     # Set parameters
-    sub_folder = '2_index_demultiplexing'
     folder = project_folder / sub_folder / 'data'
+    output_folder = project_folder / '8_nanopore_report' / 'data'
 
     # Get all .fastq or .fastq.gz files
-    suffix = '*.fastq.gz' if compressed else '*.fastq'
-    fastq_files = folder.glob(suffix)
+    fastq_files = folder.glob('*.fastq')
+    fastq_gz_files = folder.glob('*.fastq.gz')
 
-    def analyse_read(filename: Path, compressed: bool) -> dict:
+    cpu_count = multiprocessing.cpu_count()-1
+
+    def analyse_reads(fastq_file, output_folder, compressed):
         """Analyze read qualities and lengths and create summary plots."""
 
-        compressed = True
-        filename = Path('/Volumes/Coruscant/APSCALE_projects/naturalis_test_apscale_nanopore/3_primer_trimming/data/naturalis_sample_1_trimmed.fastq.gz')
-        outdir = Path('/Volumes/Coruscant/APSCALE_projects/naturalis_test_apscale_nanopore/9_nanopore_report/')
+        # Extract name
+        name = fastq_file.name.replace('.fastq.gz', '') if compressed else fastq_file.name.replace('.fastq', '')
+
+        # Create output folder
+        outdir = output_folder / name
+        os.makedirs(outdir, exist_ok=True)
 
         # Choose appropriate open method
         open_func = gzip.open if compressed else open
@@ -57,55 +57,122 @@ def quality_report(project_folder, sub_folder, compressed):
         mean_qualities = []
         read_lengths = []
 
-        with open_func(filename, "rt") as handle:
+        with open_func(fastq_file, "rt") as handle:
             for record in SeqIO.parse(handle, "fastq"):
                 phred_scores = record.letter_annotations["phred_quality"]
-                mean_qualities.append(math.ceil(np.mean(phred_scores)))
+                if phred_scores:
+                    mean_q = math.ceil(np.mean(phred_scores))
+                else:
+                    mean_q = 0
+                mean_qualities.append(mean_q)
                 read_lengths.append(len(record.seq))
 
-        # -----------------------------
-        # Plot 1: Mean Phred Score Distribution
-        # -----------------------------
+        df = pd.DataFrame({
+            "MeanQuality": mean_qualities,
+            "ReadLength": read_lengths
+        })
+
+        # ----------------------------------------
+        # Plot 1: Distribution of Mean Phred Scores
+        # ----------------------------------------
         fig1 = go.Figure()
-        x_vals = list(range(1, 61))
-        y_vals = [mean_qualities.count(i) for i in x_vals]
-        fig1.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='markers', name='Mean Quality'))
-        fig1.update_layout(title='Distribution of Mean Phred Scores',
-                           xaxis_title='Mean Phred Score',
-                           yaxis_title='Read Count')
-        fig1.write_image(outdir / 'mean_phred_distribution.pdf')
+        fig1.add_trace(go.Histogram(
+            x=df["MeanQuality"],
+            xbins=dict(start=0, end=60, size=1),
+            marker_color='steelblue',
+            name='Mean Quality',
+            opacity=0.9
+        ))
+        # Add background color zones
+        fig1.add_vrect(x0=0, x1=20, fillcolor="red", opacity=0.1, layer="below", line_width=0)
+        fig1.add_vrect(x0=20, x1=30, fillcolor="yellow", opacity=0.1, layer="below", line_width=0)
+        fig1.add_vrect(x0=30, x1=60, fillcolor="green", opacity=0.05, layer="below", line_width=0)
 
-        # -----------------------------
-        # Plot 2: Read Length Distribution
-        # -----------------------------
+        fig1.update_layout(
+            title='Distribution of Mean Phred Scores',
+            xaxis_title='Mean Phred Score',
+            yaxis_title='Read Count',
+            template='simple_white'
+        )
+        fig1.write_html(outdir / f'{name}_mean_phred_distribution.html')
+
+        # ----------------------------------------
+        # Plot 2: Distribution of Read Lengths
+        # ----------------------------------------
         fig2 = go.Figure()
-        max_len = max(read_lengths)
-        x_vals = list(range(0, max_len + 1))
-        y_vals = [read_lengths.count(i) for i in x_vals]
-        fig2.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='markers', name='Read Length'))
-        fig2.update_layout(title='Read Length Distribution',
-                           xaxis_title='Read Length (bp)',
-                           yaxis_title='Read Count')
-        fig2.write_image(outdir / 'read_length_distribution.pdf')
+        fig2.add_trace(go.Histogram(
+            x=df["ReadLength"],
+            xbins=dict(start=0, end=max(read_lengths) + 1, size=5),
+            marker_color='indianred',
+            name='Read Length',
+            opacity=0.85
+        ))
 
-        # -----------------------------
+        fig2.update_layout(
+            title='Distribution of Read Lengths',
+            xaxis_title='Read Length (bp)',
+            yaxis_title='Read Count',
+            template='simple_white'
+        )
+        fig2.write_html(outdir / f'{name}_read_length_distribution.html')
+
+        # ----------------------------------------
         # Plot 3: Mean Quality vs. Read Length
-        # -----------------------------
+        # ----------------------------------------
         fig3 = go.Figure()
         fig3.add_trace(go.Scatter(
-            x=read_lengths,
-            y=mean_qualities,
+            x=df["ReadLength"],
+            y=df["MeanQuality"],
             mode='markers',
-            name='Length vs Quality',
-            marker=dict(size=4, opacity=0.5)
+            marker=dict(size=4, opacity=0.5, color=df["MeanQuality"], colorscale='algae', showscale=True),
+            name='Length vs Quality'
         ))
-        fig3.update_layout(title='Mean Quality vs. Read Length',
-                           xaxis_title='Read Length (bp)',
-                           yaxis_title='Mean Phred Quality')
-        fig3.write_image(outdir / 'quality_vs_length.pdf')
+
+        # Add background coloring for y-axis quality zones
+        fig3.add_shape(type="rect", x0=0, x1=max(read_lengths), y0=0, y1=20, fillcolor="red", opacity=0.05,
+                       layer="below", line_width=0)
+        fig3.add_shape(type="rect", x0=0, x1=max(read_lengths), y0=20, y1=30, fillcolor="yellow", opacity=0.05,
+                       layer="below", line_width=0)
+        fig3.add_shape(type="rect", x0=0, x1=max(read_lengths), y0=30, y1=60, fillcolor="green", opacity=0.03,
+                       layer="below", line_width=0)
+        fig3.update_yaxes(rangemode='tozero')
+        fig3.update_xaxes(rangemode='tozero')
+        fig3.update_layout(
+            title='Mean Quality vs. Read Length',
+            xaxis_title='Read Length (bp)',
+            yaxis_title='Mean Phred Quality',
+            template='simple_white'
+        )
+        fig3.write_html(outdir / f'{name}_quality_vs_length.html')
+
+        # ----------------------------------------
+        # Plot 4: Boxplot of Quality per Read Length Bin
+        # ----------------------------------------
+        df["LengthBin"] = pd.cut(df["ReadLength"], bins=range(0, max(read_lengths) + 50, 50))
+
+        fig4 = go.Figure()
+        for name_, group in df.groupby("LengthBin", observed=False):
+            fig4.add_trace(go.Box(
+                y=group["MeanQuality"],
+                name=str(name_),
+                boxpoints=False,
+                marker_color='darkslateblue',
+                line=dict(width=1)
+            ))
+
+        fig4.update_layout(
+            title="Mean Quality by Read Length Bins (50 bp)",
+            xaxis_title="Read Length Bin (bp)",
+            yaxis_title="Mean Phred Score",
+            template='simple_white'
+        )
+        fig4.write_html(outdir / f'{name}_boxplot_quality_by_lengthbin.html')
+
+        print(f'{datetime.now():%H:%M:%S} - Finished analysing "{name}".')
 
     # Run in parallel
-    res = Parallel(n_jobs=cpu_count, backend='loky')(delayed(calculate_phred_score)(fastq_file, compressed) for fastq_file in fastq_files)
+    Parallel(n_jobs=cpu_count, backend='loky')(delayed(analyse_reads)(fastq_file, output_folder, False) for fastq_file in fastq_files)
+    Parallel(n_jobs=cpu_count, backend='loky')(delayed(analyse_reads)(fastq_file, output_folder, True) for fastq_file in fastq_gz_files)
 
 def is_file_still_writing(filepath, wait_time=1.0):
     initial_size = os.path.getsize(filepath)
@@ -125,7 +192,8 @@ def open_file(filepath):
 def create_project(project_folder, project_name):
 
     # Create subfolders
-    sub_folders = ['1_raw_data', '2_index_demultiplexing', '3_tag_demultiplexing', '4_primer_trimming', '5_quality_filtering', '6_denoising', '7_ESV_table', '8_taxonomic_assignment', '9_nanopore_report']
+    sub_folders = ['1_raw_data', '2_index_demultiplexing', '3_primer_trimming', '4_quality_filtering', '5_denoising', '6_ESV_table', '7_taxonomic_assignment', '8_nanopore_report']
+
     for folder in sub_folders:
         folder_path = project_folder.joinpath(folder)
         os.makedirs(folder_path, exist_ok=True)
@@ -133,65 +201,29 @@ def create_project(project_folder, project_name):
         os.makedirs(data_folder_path, exist_ok=True)
         print(f'{datetime.now().strftime("%H:%M:%S")} - Created "{folder}" folder.')
 
-    # Define path to settings file
-    settings_file = project_folder.joinpath(project_name + '_settings.xlsx')
-
-    # Create demultiplexing sheet
-    cols = ['Forward index 5-3', 'Forward tag 5-3', 'Forward primer 5-3', 'Forward index 5-3', 'Forward tag 5-3', 'Forward primer 5-3', 'ID']
-    rows = [['CTGT', '', 'AAACTCGTGCCAGCCACC', 'GTCCTA', '', 'GGGTATCTAATCCCAGTTTG', 'example_1_only_barcodes']]
-    demultipexing_df_empty = pd.DataFrame(rows, columns=cols)
-
-    # Create settings sheet
-    cols = ['Step', 'Category', 'Variable', 'Comment']
-    rows = [['General', 'cpu count', multiprocessing.cpu_count()-1, 'Number of cores to use'],
-             ['demultiplexing (index)',
-              'allowed errors index',
-              3,
-              'Allowed errors during index demultiplexing'],
-            ['primer trimming',
-             'allowed errors primer',
-             4,
-             'Allowed errors during primer trimming'],
-            ['demultiplexing (tag)',
-             'allowed errors tag',
-             1,
-             'Allowed errors during tag demultiplexing'],
-             ['quality filtering',
-              'minimum length',
-              '',
-              'Reads below this length will be discarded'],
-             ['quality filtering',
-              'maximum length',
-              '',
-              'Reads above this length will be discarded'],
-            ['quality filtering',
-             'minimum quality',
-             20,
-             'Reads below this average PHRED quality score will be discarded'],
-             ['swarm denoising', 'd', 1, 'Stringency of denoising'],
-            ['read table', 'minimum reads', 10, 'Discard reads below this threshold'],
-            ['taxonomic assignment', 'apscale blast', 'yes', 'Run apscale megablast (yes or no)'],
-            ['taxonomic assignment', 'apscale db', '', 'Path to local database'],
-            ]
-    settings_df_empty = pd.DataFrame(rows, columns=cols)
-
-    # Write to multiple sheets
-    with pd.ExcelWriter(settings_file, engine='openpyxl') as writer:
-        demultipexing_df_empty.to_excel(writer, sheet_name='Demultiplexing', index=False)
-        settings_df_empty.to_excel(writer, sheet_name='Settings', index=False)
+    res = input('Is your data already demultiplexed (y/n): ')
+    if res.upper() == 'Y':
+        default_settings_file = Path(__file__).resolve().parent.joinpath('default_settings_nd.xlsx')
+        project_settings_file = project_folder.joinpath(project_name + '_settings.xlsx')
+        shutil.copyfile(default_settings_file, project_settings_file)
+    else:
+        default_settings_file = Path(__file__).resolve().parent.joinpath('default_settings.xlsx')
+        project_settings_file = project_folder.joinpath(project_name + '_settings.xlsx')
+        shutil.copyfile(default_settings_file, project_settings_file)
 
     print(f'{datetime.now().strftime("%H:%M:%S")} - Created settings file.')
     print('')
+
     print(f'{datetime.now().strftime("%H:%M:%S")} - Copy your data into the "1_raw_data/data" folder.')
     print(f'{datetime.now().strftime("%H:%M:%S")} - Adjust the settings file.')
     res = input('Open in settings file Excel? (y/n): ')
     if res.upper() == 'Y':
-        open_file(settings_file)
+        open_file(project_settings_file)
     print(f'{datetime.now().strftime("%H:%M:%S")} - Then run:')
     print(f'          $ apscale_nanopore run -p {project_name}_apscale_nanopore')
     print('')
 
-def watch_folder(project_folder, settings_df, demultiplexing_df, live_calling, steps):
+def apscale_nanopore_watch_folder(project_folder, settings_df, demultiplexing_df, steps, skip_demultiplexing):
 
     try:
         while True:
@@ -204,7 +236,6 @@ def watch_folder(project_folder, settings_df, demultiplexing_df, live_calling, s
             print(f'{datetime.now().strftime("%H:%M:%S")} - Scanning for files...')
             main_files = [i for i in glob.glob(str(raw_data_folder.joinpath('*.fastq*')))]
             main_files = {Path(file).name:Path(file) for file in main_files}
-            batch = 0
 
             # Collect number of available CPUs
             cpu_count = settings_df[settings_df['Category'] == 'cpu count']['Variable'].values.tolist()[0]
@@ -229,8 +260,8 @@ def watch_folder(project_folder, settings_df, demultiplexing_df, live_calling, s
 
             # Analyse files if present
             else:
+
                 print(f'{datetime.now().strftime("%H:%M:%S")} - Found {len(main_files)} file(s) to process!\n')
-                batch += 1
 
                 # Analyse the files
                 i = 0
@@ -243,82 +274,173 @@ def watch_folder(project_folder, settings_df, demultiplexing_df, live_calling, s
                     # Start processing of the file
                     name = name.replace('.fastq.gz', '')
                     main_file = Path(main_file)
-                    print(f'{datetime.now().strftime("%H:%M:%S")} - Starting analysis for: {name} ({i+1}/{len(main_files)})')
 
-                    #=======# Index demultiplexing #=======#
-                    if "Index demultiplexing" in steps:
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt index demultiplexing...')
+                    if skip_demultiplexing == False and "Index demultiplexing" in steps:
+                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting demultiplexing for: {name} ({i+1}/{len(main_files)})')
+                        #=======# Index demultiplexing #=======#
                         cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demultiplexing_df)
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt index demultiplexing!')
-                        print('')
+                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finsihed demultiplexing for: {name} ({i+1}/{len(main_files)})')
+                    elif skip_demultiplexing == True and "Index demultiplexing" in steps:
+                        print(f'{datetime.now().strftime("%H:%M:%S")} - Skipping demultiplexing.')
+                        print(f'{datetime.now().strftime("%H:%M:%S")} - Samples will be copied to the "2_index_demultiplexing" folder.')
+                        # Still copy files to respective folder
+                        files = glob.glob(str(project_folder.joinpath('1_raw_data', 'data', '*.fastq*')))
+                        for file in files:
+                            new_file = file.replace('1_raw_data', '2_index_demultiplexing')
+                            shutil.copyfile(file, new_file)
 
-                    #=======# Tag demultiplexing #=======#
-                    if "Tag demultiplexing" in steps:
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt tag demultiplexing...')
-                        cutadapt_tag_demultiplexing(project_folder, settings_df, demultiplexing_df)
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt tag demultiplexing!')
-                        print('')
-
-                    #=======# Primer trimming #=======#
-                    if "Primer trimming" in steps:
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt primer trimming...')
-                        fastq_files = glob.glob(str(project_folder.joinpath('3_tag_demultiplexing', 'data', '*.fastq')))
-                        Parallel(n_jobs=cpu_count, backend='threading')(delayed(cutadapt_primer_trimming)(project_folder, fastq_file, settings_df, demultiplexing_df) for fastq_file in fastq_files)
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt primer trimming!')
-                        print('')
-
-                    #=======# Quality filtering #=======#
-                    if "Quality filtering" in steps:
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting quality filtering...')
-                        fastq_files = glob.glob(str(project_folder.joinpath('4_primer_trimming', 'data', '*.fastq.gz')))
-                        Parallel(n_jobs=cpu_count, backend='loky')(delayed(python_quality_filtering)(project_folder, fastq_file, settings_df) for fastq_file in fastq_files)
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished vsearch quality filtering!')
-                        print('')
-
-                    #=======# Denoising #=======#
-                    if "Denoising" in steps:
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting swarm denoising...')
-                        fasta_files = glob.glob(str(project_folder.joinpath('5_quality_filtering', 'data', '*.fasta')))
-                        Parallel(n_jobs=cpu_count, backend='loky')(delayed(swarm_denoising)(project_folder, fasta_file, settings_df) for fasta_file in fasta_files)
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished swarm denoising...')
-                        print('')
-
-                    #=======# Read table #=======#
-                    if "ESV table" in steps:
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting to build read table...')
-                        create_read_table(project_folder, settings_df)
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished building read table!')
-                        print('')
-
-                    #=======# Taxonomic assignment #=======#
-                    if "Tax. assignment" in steps:
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting taxonomic assignment...')
-                        apscale_taxonomic_assignment(project_folder, settings_df)
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished building read table!')
-                        print('')
-
-                    if len(steps) == 7:
-                        # Move file to finish analysis for the file
-                        new_file = Path(str(raw_tmp_folder.joinpath(name)) + '.fastq.gz')
-                        shutil.move(main_file, new_file)
-                        print(f'{datetime.now().strftime("%H:%M:%S")} - Moved {name}...')
-
-                    # Finish file
-                    print(f'{datetime.now().strftime("%H:%M:%S")} - Finished analysis for: {name}\n')
-                    time.sleep(1)
+                    # Move file to tmp folder
+                    new_file = Path(str(raw_tmp_folder.joinpath(name)) + '.fastq.gz')
+                    shutil.move(main_file, new_file)
+                    print(f'{datetime.now().strftime("%H:%M:%S")} - Moved {name}...')
+                    print('')
                     i += 1
+
+                print(f'{datetime.now().strftime("%H:%M:%S")} - Starting raw-data processing for {len(main_files)} files.')
+                print('')
+
+                #=======# Primer trimming #=======#
+                if "Primer trimming" in steps:
+                    print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt primer trimming...')
+                    fastq_files = glob.glob(str(project_folder.joinpath('2_index_demultiplexing', 'data', '*.fastq*')))
+                    Parallel(n_jobs=cpu_count, backend='loky')(delayed(cutadapt_primer_trimming)(project_folder, fastq_file, settings_df, demultiplexing_df) for fastq_file in fastq_files)
+                    print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt primer trimming!')
+                    print('')
+
+                #=======# Quality filtering #=======#
+                if "Quality filtering" in steps:
+                    print(f'{datetime.now().strftime("%H:%M:%S")} - Starting quality filtering...')
+                    fastq_files = glob.glob(str(project_folder.joinpath('3_primer_trimming', 'data', '*.fastq.gz')))
+                    Parallel(n_jobs=cpu_count, backend='loky')(delayed(python_quality_filtering)(project_folder, fastq_file, settings_df) for fastq_file in fastq_files)
+                    print(f'{datetime.now().strftime("%H:%M:%S")} - Finished vsearch quality filtering!')
+                    print('')
+
+                #=======# Denoising #=======#
+                if "Denoising" in steps:
+                    print(f'{datetime.now().strftime("%H:%M:%S")} - Starting clustering/denoising...')
+                    fasta_files = glob.glob(str(project_folder.joinpath('4_quality_filtering', 'data', '*.fasta')))
+                    Parallel(n_jobs=cpu_count, backend='loky')(delayed(clustering_denoising)(project_folder, fasta_file, settings_df) for fasta_file in fasta_files)
+                    print(f'{datetime.now().strftime("%H:%M:%S")} - Finished clustering/denoising...')
+                    print('')
+
+                #=======# Read table #=======#
+                if "ESV table" in steps:
+                    print(f'{datetime.now().strftime("%H:%M:%S")} - Starting to build read table...')
+                    create_read_table(project_folder, settings_df)
+                    print(f'{datetime.now().strftime("%H:%M:%S")} - Finished building read table!')
+                    print('')
+
+                #=======# Taxonomic assignment #=======#
+                if "Tax. assignment" in steps:
+                    print(f'{datetime.now().strftime("%H:%M:%S")} - Starting taxonomic assignment...')
+                    apscale_taxonomic_assignment(project_folder, settings_df)
+                    print(f'{datetime.now().strftime("%H:%M:%S")} - Finished taxonomic assignment!')
+                    print('')
 
                 # =======# Create report #=======#
                 # create_report(project_folder)
 
-                print(f'{datetime.now().strftime("%H:%M:%S")} - Finished analysis for: {name} ({i}/{len(main_files)})')
+                print(f'{datetime.now().strftime("%H:%M:%S")} - Finished raw-data processing for {len(main_files)}) files.')
                 print('')
-
-            if live_calling == False:
-                break
 
     except KeyboardInterrupt:
         print('Stopping apscale nanopore live processing.')
+
+def apscale_nanopore(project_folder, settings_df, demultiplexing_df, steps, skip_demultiplexing):
+
+    # Define folders
+    raw_data_folder = project_folder.joinpath('1_raw_data', 'data')
+    raw_tmp_folder = project_folder.joinpath('1_raw_data', 'tmp')
+    os.makedirs(raw_tmp_folder, exist_ok=True)
+
+    # Scan for files
+    print(f'{datetime.now().strftime("%H:%M:%S")} - Scanning for files...')
+    main_files = [i for i in glob.glob(str(raw_data_folder.joinpath('*.fastq*')))]
+    main_files = {Path(file).name:Path(file) for file in main_files}
+    print(f'{datetime.now().strftime("%H:%M:%S")} - Print found {len(main_files)} fastq raw data files.')
+    print('')
+
+    # Collect number of available CPUs
+    cpu_count = settings_df[settings_df['Category'] == 'cpu count']['Variable'].values.tolist()[0]
+
+    # Gzip files if required
+    for name, file in main_files.items():
+        suffix = file.suffix
+        if suffix == ".fastq":
+            print(f'{datetime.now().strftime("%H:%M:%S")} - Zipping {name}...')
+            file_gz = Path(str(file) + '.gz')
+            with open(file, 'rb') as f_in:
+                with gzip.open(file_gz, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            time.sleep(0.1)
+            os.remove(file)
+            main_files[name] = file_gz
+
+    # Demultiplex the files
+    if skip_demultiplexing == False and "Index demultiplexing" in steps:
+        i = 0
+        for name, main_file in main_files.items():
+            # Start processing of the file
+            name = name.replace('.fastq.gz', '')
+            main_file = Path(main_file)
+            print(f'{datetime.now().strftime("%H:%M:%S")} - Starting demultiplexing for: {name} ({i+1}/{len(main_files)})')
+            #=======# Index demultiplexing #=======#
+            print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt index demultiplexing...')
+            cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demultiplexing_df)
+            print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt index demultiplexing!')
+            print('')
+            i += 1
+
+    elif skip_demultiplexing == True and "Index demultiplexing" in steps:
+            print(f'{datetime.now().strftime("%H:%M:%S")} - Skipping demultiplexing.')
+            print(f'{datetime.now().strftime("%H:%M:%S")} - Samples will be copied to the "2_index_demultiplexing" folder.')
+            print('')
+            # Still copy files to respective folder
+            files = glob.glob(str(project_folder.joinpath('1_raw_data', 'data', '*.fastq*')))
+            for file in files:
+                new_file = file.replace('1_raw_data', '2_index_demultiplexing')
+                shutil.copyfile(file, new_file)
+
+    #=======# Primer trimming #=======#
+    if "Primer trimming" in steps:
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting cutadapt primer trimming...')
+        fastq_files = glob.glob(str(project_folder.joinpath('2_index_demultiplexing', 'data', '*.fastq*')))
+        Parallel(n_jobs=cpu_count, backend='loky')(delayed(cutadapt_primer_trimming)(project_folder, fastq_file, settings_df, demultiplexing_df) for fastq_file in fastq_files)
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished cutadapt primer trimming!')
+        print('')
+
+    #=======# Quality filtering #=======#
+    if "Quality filtering" in steps:
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting quality filtering...')
+        fastq_files = glob.glob(str(project_folder.joinpath('3_primer_trimming', 'data', '*.fastq.gz')))
+        Parallel(n_jobs=cpu_count, backend='loky')(delayed(python_quality_filtering)(project_folder, fastq_file, settings_df) for fastq_file in fastq_files)
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished vsearch quality filtering!')
+        print('')
+
+    #=======# Denoising #=======#
+    if "Denoising" in steps:
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting clustering/denoising...')
+        fasta_files = glob.glob(str(project_folder.joinpath('4_quality_filtering', 'data', '*.fasta')))
+        Parallel(n_jobs=cpu_count, backend='loky')(delayed(clustering_denoising)(project_folder, fasta_file, settings_df) for fasta_file in fasta_files)
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished clustering/denoising...')
+        print('')
+
+    #=======# Read table #=======#
+    if "ESV table" in steps:
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting to build read table...')
+        create_read_table(project_folder, settings_df)
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished building read table!')
+        print('')
+
+    #=======# Taxonomic assignment #=======#
+    if "Tax. assignment" in steps:
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Starting taxonomic assignment...')
+        apscale_taxonomic_assignment(project_folder, settings_df)
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Finished taxonomic assignment!')
+        print('')
+
+    # =======# Create report #=======#
+    # create_report(project_folder)
 
 def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demultiplexing_df):
 
@@ -352,7 +474,7 @@ def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demult
         # Create forward sequence
         fwd_seq = row['Forward index 5-3']
         # Create reverse sequence
-        rvs_seq = reverse_complement(row['Forward index 5-3'])
+        rvs_seq = reverse_complement(row['Reverse index 5-3'])
         # Combine to search sequence
         search_seq = f'{fwd_seq}...{rvs_seq}'
         g_args.extend(['-g', search_seq])
@@ -408,7 +530,7 @@ def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demult
         sample_id = demultiplexing_df['ID'][index]
         output_file = output_folder_data.joinpath(f'{sample_id}.fastq')
 
-        with open(output_file, "w") as out_handle:
+        with open(output_file, "a") as out_handle:
             for in_file in [tmp_file_fwd, tmp_file_rc]:
                 with open(in_file, "r") as in_handle:
                     shutil.copyfileobj(in_handle, out_handle, length=1024 * 1024)  # 1MB buffer
@@ -419,95 +541,18 @@ def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demult
 
     Parallel(n_jobs=-1, backend='loky')(delayed(merge_fastq_files)(tmp_file_fwd, tmp_file_rc, output_folder_data) for tmp_file_fwd, tmp_file_rc in zip(demultiplexed_fwd_files, demultiplexed_rc_files))
 
-def cutadapt_tag_demultiplexing(project_folder, settings_df, demultiplexing_df):
-
-    # Check if tags are used
-    print(f'{datetime.now().strftime("%H:%M:%S")} - Samples will be copied to the "3_tag_demultiplexing" folder.')
-    # Still copy files to respective folder
-    files = glob.glob(str(project_folder.joinpath('2_index_demultiplexing', 'data', '*.fastq')))
-    for file in files:
-        new_file = file.replace('2_index_demultiplexing', '3_tag_demultiplexing')
-        shutil.move(file, new_file)
-
-    if '' in demultiplexing_df['Forward tag 5-3'].values.tolist():
-        print(f'{datetime.now().strftime("%H:%M:%S")} - No tagging information was found - skipping tag demultiplexing.')
-        return
-
-    # Preprare output files
-    output_folder_tmp = project_folder.joinpath('3_tag_demultiplexing', 'tmp')
-    output_folder_data = project_folder.joinpath('3_tag_demultiplexing', 'data')
-    output_file = output_folder_tmp.joinpath("{name}.fastq")
-
-    # Create tmp folder
-    tmp_folder = project_folder.joinpath('3_tag_demultiplexing', 'tmp')
-    os.makedirs(tmp_folder, exist_ok=True)
-
-    # Collect required settings
-    number_of_errors = settings_df[settings_df['Category'] == 'allowed errors tag']['Variable'].values.tolist()[0]
-    cpu_count = settings_df[settings_df['Category'] == 'cpu count']['Variable'].values.tolist()[0]
-
-    # Collect all files
-    files = glob.glob(str(project_folder.joinpath('4_primer_trimming', 'data', '*.fastq.gz')))
-    merged_file = project_folder.joinpath('3_tag_demultiplexing', 'tmp', 'merged_samples.fastq.gz')
-    with gzip.open(merged_file, "wb") as outfile:
-        for f in files:
-            with gzip.open(f, "rb") as infile:
-                shutil.copyfileobj(infile, outfile)
-
-    # Run cutadapt demultiplexing
-    g_args = []
-    for _, row in demultiplexing_df.iterrows():
-        # Create forward sequence
-        fwd_seq = row['Forward tag 5-3']
-        # Create reverse sequence
-        rvs_seq = row['Forward tag 5-3']
-        # Combine to search sequence
-        search_seq = f'{fwd_seq}...{rvs_seq}'
-        g_args.extend(['-g', search_seq])
-
-    # Run cutadapt demultiplexing and primer trimming
-    command = f"cutadapt -e {number_of_errors} {' '.join(g_args)} --cores 1 -o {output_file} --discard-untrimmed --report=minimal {merged_file}"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
-
-    # You can now use `stdout` and `stderr` as variables
-    in_reads = int(stdout.split()[11])
-    out_reads = int(stdout.split()[-3])
-    out_reads_perc = round(out_reads / in_reads * 100, 2)
-    print(f'{datetime.now().strftime("%H:%M:%S")} - Finished tag demultiplexing of: {out_reads_perc}% of reads kept.')
-
-    # Collect all .fastq files (uncompressed)
-    demultiplexed_files = glob.glob(str(output_folder_tmp.joinpath('*.fastq')))
-
-    if len(demultiplexed_files) == 0:
-        print(f'{datetime.now().strftime("%H:%M:%S")} - Error: Could not find any demultiplexed files!')
-        return False
-
-    for tmp_file in tqdm(demultiplexed_files, desc='Writing sample files'):
-        tmp_file = Path(tmp_file)
-        index = int(tmp_file.name.replace('.fastq', '')) - 1
-        sample_id = demultiplexing_df['ID'][index]
-        sample_file = output_folder_data.joinpath(f'{sample_id}.fastq.gz')
-
-        # Append compressed data to the .fastq.gz file
-        with open(tmp_file, "rb") as in_handle, gzip.open(sample_file, "ab") as out_handle:
-            shutil.copyfileobj(in_handle, out_handle)
-
-    # Remove tmp files
-    shutil.rmtree(output_folder_tmp)
-
 def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_df):
 
     # Preprare output files
-    # file = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/2_index_demultiplexing/data/Sample_3.fastq'
+    # file = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/2_index_demultiplexing/data/Sample_3.fastq.gz'
     input_file = Path(file)
-    name = input_file.name.replace('.fastq', '')
-    output_folder_data = project_folder.joinpath('4_primer_trimming', 'data')
+    name = input_file.name.replace('.fastq', '').replace('.gz', '')
+    output_folder_data = project_folder.joinpath('3_primer_trimming', 'data')
     output_file = output_folder_data.joinpath(f"{name}_trimmed.fastq.gz")
 
     # Also save the untrimmed reads
     # Create reverse complement of untrimmed
-    untrimmed_folder = project_folder.joinpath('4_primer_trimming', 'untrimmed')
+    untrimmed_folder = project_folder.joinpath('3_primer_trimming', 'untrimmed')
     os.makedirs(untrimmed_folder, exist_ok=True)
     output_file_untrimmed = untrimmed_folder.joinpath(f"{name}_untrimmed.fastq")
     output_file_untrimmed_rc = untrimmed_folder.joinpath(f"{name}_untrimmed_rc.fastq")
@@ -519,7 +564,11 @@ def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_d
 
     # Run cutadapt demultiplexing
     # Create forward sequence
-    sub_df = demultiplexing_df[demultiplexing_df['ID'] == name]
+    # Check if index demultiplexing is required
+    if '' in demultiplexing_df['Forward index 5-3'].values.tolist():
+        sub_df = demultiplexing_df.head(1)
+    else:
+        sub_df = demultiplexing_df[demultiplexing_df['ID'] == name]
     fwd_seq = sub_df['Forward primer 5-3'].values.tolist()[0]
     # Create reverse sequence
     rvs_seq_rc = reverse_complement(sub_df['Reverse primer 5-3'].values.tolist()[0])
@@ -578,7 +627,7 @@ def python_quality_filtering(project_folder, file, settings_df):
     # file = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/3_primer_trimming/data/Sample_3_trimmed.fastq.gz'
     input_file = Path(file)
     name = input_file.name.replace('.fastq.gz', '')
-    output_folder_data = project_folder.joinpath('5_quality_filtering', 'data')
+    output_folder_data = project_folder.joinpath('4_quality_filtering', 'data')
     # output files
     filtered_fasta = output_folder_data.joinpath(f'{name}_filtered.fasta')
     dereplicated_fasta = output_folder_data.joinpath(f'{name}_filtered_derep.fasta')
@@ -599,7 +648,7 @@ def python_quality_filtering(project_folder, file, settings_df):
             read_length = len(record.seq)
             if not phred_scores:
                 continue
-            if np.mean(phred_scores) >= trunc_val and min_len <= read_length <= max_len:
+            if np.mean(phred_scores) >= int(trunc_val) and int(min_len) <= read_length <= int(max_len):
                 fasta_record = SeqRecord(
                     Seq(str(record.seq)),
                     id=record.id,
@@ -618,34 +667,80 @@ def python_quality_filtering(project_folder, file, settings_df):
         reads_perc = round(reads_1 / total_reads * 100, 2)
     except ZeroDivisionError:
         reads_perc = 0
-    print(f'{datetime.now().strftime("%H:%M:%S")} - {name.replace("_trimmed", "")}: {total_reads:,} -> {reads_1:,} ({reads_perc}% passed) -> {int(reads_2):,} (dereplication)')
+    print(f'{datetime.now().strftime("%H:%M:%S")} - {name.replace("_trimmed", "")}: {total_reads:,} -> {reads_1:,} reads ({reads_perc}% passed) -> {int(reads_2):,} (dereplication)')
 
     if filtered_fasta.exists():
         os.remove(filtered_fasta)
 
-def swarm_denoising(project_folder, file, settings_df):
+def clustering_denoising(project_folder, file, settings_df):
 
     # Preprate output files
+    # file = '/Volumes/Coruscant/APSCALE_projects/naturalis_dataset_apscale_nanopore/4_quality_filtering/data/naturalis_sample_35_trimmed_filtered_derep.fasta'
     input_file = Path(file)
     name = input_file.name.replace('_trimmed_filtered_derep.fasta', '')
-    output_folder_data = project_folder.joinpath('6_denoising', 'data')
+    output_folder_data = project_folder.joinpath('5_denoising', 'data')
     cluster_file = output_folder_data.joinpath(f'{name}_clusters.fasta')
 
     # Collect required settings
-    d_value = settings_df[settings_df['Category'] == 'd']['Variable'].values.tolist()[0]
+    mode = settings_df[settings_df['Category'] == 'mode']['Variable'].values.tolist()[0]
 
-    # Run swarm denoising
-    command = f"swarm -d {d_value} --threads 1 -z --seeds {cluster_file} {input_file}"
+    if mode == 'Swarms':
+        d_value = settings_df[settings_df['Category'] == 'd']['Variable'].values.tolist()[0]
+
+        # Run swarm denoising
+        command = f"swarm -d {d_value} --threads 1 -z --seeds {cluster_file} {input_file}"
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+    elif mode == 'ESVs':
+        alpha_value = settings_df[settings_df['Category'] == 'alpha']['Variable'].values.tolist()[0]
+
+        # Run vsearch denoising
+        command = f"vsearch --cluster_unoise {input_file} --unoise_alpha {alpha_value} --threads 1 --centroids {cluster_file} "
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+    elif mode == 'OTUs':
+        percid_value = settings_df[settings_df['Category'] == 'percid']['Variable'].values.tolist()[0]
+
+        # Run vsearch clustering
+        command = f"vsearch --cluster_size {input_file} --id {percid_value} --threads 1 --centroids {cluster_file} "
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+    else:
+        # Initial denoising
+        alpha_value = settings_df[settings_df['Category'] == 'alpha']['Variable'].values.tolist()[0]
+        # Run vsearch denoising
+        cluster_file_0 = output_folder_data.joinpath(f'{name}_denoise.fasta')
+        command = f"vsearch --cluster_unoise {input_file} --unoise_alpha {alpha_value} --threads 1 --centroids {cluster_file_0} "
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+
+        # Then clustering
+        percid_value = settings_df[settings_df['Category'] == 'percid']['Variable'].values.tolist()[0]
+        # Run vsearch clustering
+        command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --centroids {cluster_file} "
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+        if cluster_file_0.exists():
+            os.remove(cluster_file_0)
+
+    # Perform chimera detection
+    nochimera_fasta = output_folder_data.joinpath(f'{name}_clusters_nochimera.fasta')
+    command = f'vsearch --uchime3_denovo {cluster_file} --threads 1 --nonchimeras {nochimera_fasta}'
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     stdout, stderr = process.communicate()
-
-    # You can now use `stdout` and `stderr` as variables
-    swarms = int(stderr.split()[-7])
-    print(f'{datetime.now().strftime("%H:%M:%S")} - {name}: {swarms:,} swarms.')
+    nochimera_total = stderr.split()[-12]
+    nochimera_perc = stderr.split()[-11]
+    if nochimera_total == '0':
+        print(f'{datetime.now().strftime("%H:%M:%S")} - {name}: Wrote 0 non-chimera {mode}.')
+    else:
+        print(f'{datetime.now().strftime("%H:%M:%S")} - {name}: Wrote {int(nochimera_total):,} {nochimera_perc} non-chimera {mode}.')
+    if cluster_file.exists():
+        os.remove(cluster_file)
+    time.sleep(1)
 
 def create_read_table(project_folder, settings_df):
     # Prepare output files
-    swarm_files_path = project_folder.joinpath('6_denoising', 'data', '*_clusters.fasta')
+    swarm_files_path = project_folder.joinpath('5_denoising', 'data', '*_clusters_nochimera.fasta')
     swarm_files = [Path(i) for i in glob.glob(str(swarm_files_path))]
     data = defaultdict(lambda: defaultdict(int))  # nested dict: hash -> sample -> size
     seq_dict = {}  # hash -> sequence
@@ -704,40 +799,30 @@ def create_read_table(project_folder, settings_df):
 
     # Write to files
     if df.shape[0] < 65000:
-        excel_file = project_folder.joinpath('7_ESV_table', f'{project_name}_swarms.xlsx')
+        excel_file = project_folder.joinpath('6_ESV_table', f'{project_name}_swarms.xlsx')
         df.to_excel(excel_file, index=False)
-    parquet_file = project_folder.joinpath('7_ESV_table', f'{project_name}_swarms.parquet.snappy')
+    parquet_file = project_folder.joinpath('6_ESV_table', f'{project_name}_swarms.parquet.snappy')
     df.to_parquet(parquet_file, compression='snappy')
 
     # Write sequences to fasta
-    fasta_file = project_folder.joinpath('7_ESV_table', 'data', f'{project_name}_swarms.fasta')
+    fasta_file = project_folder.joinpath('6_ESV_table', 'data', f'{project_name}_clusters.fasta')
     with open(fasta_file, "w") as output_handle:
         for hash, seq in df[['ID', 'Seq']].values.tolist():
             record = SeqRecord(Seq(seq), id=hash, description='')
             SeqIO.write(record, output_handle, "fasta")
 
-    # Perform chimera detection
-    nochimera_fasta = project_folder.joinpath('7_ESV_table', 'data', f'{project_name}_swarms_nochimera.fasta')
-    command = f'vsearch --uchime3_denovo {fasta_file} --nonchimeras {nochimera_fasta}'
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
-    nochimera_total = stderr.split()[-12]
-    nochimera_perc = stderr.split()[-11]
-    print(f'{datetime.now().strftime("%H:%M:%S")} - Wrote {int(nochimera_total):,} {nochimera_perc} non-chimeras.')
-    time.sleep(1)
-
 def apscale_taxonomic_assignment(project_folder, settings_df):
     # Define files
     project_name = project_folder.name.replace('_apscale_nanopore', '')
-    fasta_file = project_folder.joinpath('7_ESV_table', 'data', f'{project_name}_swarms_nochimera.fasta')
-    results_folder = project_folder.joinpath('8_taxonomic_assignment', project_name)
+    fasta_file = project_folder.joinpath('6_ESV_table', 'data', f'{project_name}_clusters.fasta')
+    results_folder = project_folder.joinpath('7_taxonomic_assignment', project_name)
 
     # Collect variables
     run_blastn = settings_df[settings_df['Category'] == 'apscale blast']['Variable'].values.tolist()[0]
     blastn_db = settings_df[settings_df['Category'] == 'apscale db']['Variable'].values.tolist()[0]
 
     # Run apscale blast
-    if run_blastn == 'yes':
+    if run_blastn == 'Yes':
         try:
             shutil.rmtree(results_folder)
             os.makedirs(results_folder, exist_ok=True)
@@ -750,13 +835,13 @@ def apscale_taxonomic_assignment(project_folder, settings_df):
 def create_report(project_folder):
     # collect information
     project_name = project_folder.name.replace('_apscale_nanopore', '')
-    read_table_file = project_folder.joinpath('7_ESV_table', f'{project_name}_swarms.parquet.snappy')
+    read_table_file = project_folder.joinpath('6_ESV_table', f'{project_name}_swarms.parquet.snappy')
     read_table_df = pd.read_parquet(read_table_file).fillna('')
-    taxonomy_table_file = project_folder.joinpath('8_taxonomic_assignment', project_name, f'{project_name}_taxonomy.xlsx')
+    taxonomy_table_file = project_folder.joinpath('7_taxonomic_assignment', project_name, f'{project_name}_taxonomy.xlsx')
     taxonomy_table_df = pd.read_excel(taxonomy_table_file).fillna('')
 
     # create folder to store batch results
-    report_folder = project_folder.joinpath('9_nanopore_report')
+    report_folder = project_folder.joinpath('8_nanopore_report')
     os.makedirs(report_folder, exist_ok=True)
 
     # Count previous runs
@@ -808,19 +893,38 @@ def main():
     create_parser = subparsers.add_parser('create', help='Create a new APSCALE nanopore project.')
     create_parser.add_argument('-p', '--project', type=str, required=True, help='Path to project.')
 
+    # === Subparser: quality control (qc) ===
+    create_parser = subparsers.add_parser('qc', help='Quality control for subfolder.')
+    create_parser.add_argument('-p', '--project', type=str, required=True, help='Path to project.')
+
     # === Subparser: run ===
     run_parser = subparsers.add_parser('run', help='Run the APSCALE nanopore pipeline.')
+    # General
     run_parser.add_argument('-p', '--project', type=str, required=True, help='Path to project.')
     run_parser.add_argument('-live', '--live_calling', action='store_true', help='Scan 1_raw_data for new batches.')
+    run_parser.add_argument('-sd', action='store_true', help='Skip demultiplexing.')
+    # Adjust parameters on the fly
+    # allowed errors index
     run_parser.add_argument('-e1', type=str, help='Overwrite: allowed index demultiplexing errors.')
+    # allowed errors primer
     run_parser.add_argument('-e2', type=str, help='Overwrite: allowed primer trimming errors.')
-    run_parser.add_argument('-e3', type=str, help='Overwrite: allowed tag demultiplexing errors.')
-    run_parser.add_argument('-t', type=str, help='Overwrite: quality truncation cutoff.')
+    # minimum length
     run_parser.add_argument('-minlen', type=str, help='Overwrite: minimum length.')
+    # maximum length
     run_parser.add_argument('-maxlen', type=str, help='Overwrite: maximum length.')
+    # minimum quality
     run_parser.add_argument('-minq', type=str, help='Overwrite: minimum quality value.')
+    # mode
+    run_parser.add_argument('-mode', type=str, help="Overwrite: Clustering/denoising mode.")
+    # percid
+    run_parser.add_argument('-percid', type=str, help="Overwrite: Vsearch clustering percid.")
+    # alpha
+    run_parser.add_argument('-alpha', type=str, help="Overwrite: Vsearch denoising alpha.")
+    # d
     run_parser.add_argument('-d', type=str, help="Overwrite: swarm's d value.")
+    # minimum reads
     run_parser.add_argument('-minreads', type=str, help="Overwrite: Read filter threshold.")
+    # STEPS
     run_parser.add_argument('-step', type=str, help="Select step to re-run individually. "
                                                     "1:Index demultiplexing, 2:Primer trimming, "
                                                     "3:Tag demultiplexing, 4:Quality filtering, "
@@ -839,16 +943,30 @@ def main():
         project_name = project_folder.name.replace('_apscale_nanopore', '')
         create_project(project_folder, project_name)
 
+    elif args.command == 'qc':
+        print('Select for folder quality control: ')
+        print('1: "1_raw_data/data"')
+        print('2: "2_index_demultiplexing/data"')
+        print('3: "3_primer_trimming/data"')
+        res = input('Your choice: ')
+        folder = {'1': "1_raw_data", '2': "2_index_demultiplexing", '3': "3_primer_trimming"}
+        if res not in folder.keys():
+            print('Please select a suitable folder!')
+            return
+        sub_folder = folder[res]
+        project_folder = Path(args.project)
+        quality_report(project_folder, sub_folder)
+
     # Run apscale
     elif args.command == 'run':
 
         # Collect step information
-        all_steps = {"1": "Index demultiplexing", "2": "Tag demultiplexing", "3": "Primer trimming",
-                     "4": "Quality filtering", "5": "Denoising", "6": "ESV table", "7": "Tax. assignment"}
+        all_steps = {"1": "Index demultiplexing", "2": "Primer trimming",
+                     "3": "Quality filtering", "4": "Denoising", "5": "ESV table", "6": "Tax. assignment"}
         if args.step:
-            steps = [all_steps[args.step]]
+            steps = [all_steps[str(args.step)]]
         elif args.steps:
-            steps = [all_steps[str(i)] for i in range(int(args.steps), 8)]
+            steps = [all_steps[str(i)] for i in range(int(args.steps), 7)]
         else:
             steps = list(all_steps.values())
         if steps == []:
@@ -866,46 +984,62 @@ def main():
             demultiplexing_df = pd.read_excel(settings_file, sheet_name='Demultiplexing').fillna('')
 
             # Check if argument require to be adjusted
+            # allowed errors index
             if args.e1:
                 index = settings_df[settings_df['Category'] == 'allowed errors index'].index[0]
                 settings_df.loc[index, 'Variable'] = args.e1
                 print(f'Adjusted value: Number of allowed index errors: {args.e1}')
+            # allowed errors primer
             if args.e2:
                 index = settings_df[settings_df['Category'] == 'allowed errors primer'].index[0]
                 settings_df.loc[index, 'Variable'] = args.e2
                 print(f'Adjusted value: Number of allowed primer errors: {args.e2}')
-            if args.e3:
-                index = settings_df[settings_df['Category'] == 'allowed errors tag'].index[0]
-                settings_df.loc[index, 'Variable'] = args.e3
-                print(f'Adjusted value: Number of allowed tag errors: {args.e3}')
-            if args.t:
-                index = settings_df[settings_df['Category'] == 'q_min'].index[0]
-                settings_df.loc[index, 'Variable'] = args.t
-                print(f'Adjusted value: Truncation cutoff: {args.t}')
+            # minimum length
             if args.minlen:
                 index = settings_df[settings_df['Category'] == 'minimum length'].index[0]
                 settings_df.loc[index, 'Variable'] = args.minlen
                 print(f'Adjusted value: Minimum length: {args.minlen}')
+            # maximum length
             if args.maxlen:
                 index = settings_df[settings_df['Category'] == 'maximum length'].index[0]
                 settings_df.loc[index, 'Variable'] = args.maxlen
                 print(f'Adjusted value: Maximum length: {args.maxlen}')
+            # minimum quality
             if args.minq:
                 index = settings_df[settings_df['Category'] == 'minimum quality'].index[0]
                 settings_df.loc[index, 'Variable'] = args.minq
-                print(f'Adjusted value: Maximum expected error: {args.minq}')
+                print(f'Adjusted value: Minimum mean PHRED quality: {args.minq}')
+            # mode
+            if args.mode:
+                index = settings_df[settings_df['Category'] == 'mode'].index[0]
+                settings_df.loc[index, 'Variable'] = args.mode
+                print(f"Adjusted value: Clustering/denoising mode: {args.mode}")
+            # percid
+            if args.percid:
+                index = settings_df[settings_df['Category'] == 'percid'].index[0]
+                settings_df.loc[index, 'Variable'] = args.percid
+                print(f"Adjusted value: Vsearch clustering percid value: {args.percid}")
+            # alpha
+            if args.alpha:
+                index = settings_df[settings_df['Category'] == 'alpha'].index[0]
+                settings_df.loc[index, 'Variable'] = args.alpha
+                print(f"Adjusted value: Vsearch denoising alpha value: {args.alpha}")
+            # d
             if args.d:
                 index = settings_df[settings_df['Category'] == 'd'].index[0]
                 settings_df.loc[index, 'Variable'] = args.d
                 print(f"Adjusted value: Swarm's d value: {args.d}")
+            # minimum reads
             if args.minreads:
                 index = settings_df[settings_df['Category'] == 'minimum reads'].index[0]
                 settings_df.loc[index, 'Variable'] = args.minreads
                 print(f"Adjusted value: Read filter threshold: {args.minreads}")
 
             # =======# Live processing #=======#
-            print('')
-            watch_folder(project_folder, settings_df, demultiplexing_df, args.live_calling, steps)
+            if args.live_calling == True:
+                apscale_nanopore_watch_folder(project_folder, settings_df, demultiplexing_df, steps, args.sd)
+            else:
+                apscale_nanopore(project_folder, settings_df, demultiplexing_df, steps, args.sd)
 
         else:
             print(settings_file)

@@ -1,0 +1,12 @@
+LICENSE
+MANIFEST.in
+README.md
+setup.py
+apscale_nanopore/__init__.py
+apscale_nanopore/__main__.py
+apscale_nanopore.egg-info/PKG-INFO
+apscale_nanopore.egg-info/SOURCES.txt
+apscale_nanopore.egg-info/dependency_links.txt
+apscale_nanopore.egg-info/entry_points.txt
+apscale_nanopore.egg-info/requires.txt
+apscale_nanopore.egg-info/top_level.txt

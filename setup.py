@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="apscale_nanopore", # Replace with your own username
-    version="1.0.0",
+    version="1.0.1",
     author="Till-Hendrik Macher",
     author_email="macher@uni-trier.de",
     description="Advanced Pipeline for Simple yet Comprehensive AnaLysEs of DNA metabarcoding data - Nanopore application",
@@ -16,14 +16,16 @@ setuptools.setup(
     license='MIT',
     install_requires=[
                     'Bio >= 1.7.1',
-                    'biopython >= 1.84',
+                    'biopython >= 1.85',
                     'joblib >= 1.4.2',
                     'ete3 >= 3.1.3',
-                    'numpy',
-                    'pandas >= 2.2.2',
-                    'pyarrow >= 16.1.0',
-                    'xmltodict >= 0.14.2'
-                      ],
+                    'numpy >= 1.26.4',
+                    'pandas >= 2.2.3',
+                    'pyarrow >= 19.0.0',
+                    'xmltodict >= 0.14.2',
+                    'plotly >= 6.1.1',
+                    'tqdm >= 4.67.1',
+                ],
     include_package_data=True,
     classifiers=[
         "Programming Language :: Python :: 3",
