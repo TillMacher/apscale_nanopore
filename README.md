@@ -158,7 +158,7 @@ Example: Run all steps after the "quality filtering":
 
 `apscale_nanopore run -p PATH/TO/PROJECT -steps 3`
 
-# Quality control
+## Quality control
 
 A quality control can be conducted for all fastq files. Simply run:
 
