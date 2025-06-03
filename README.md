@@ -163,3 +163,65 @@ Example: Run all steps after the "quality filtering":
 A quality control can be conducted for all fastq files. Simply run:
 
 `apscale_nanopore qc -p PATH/TO/PROJECT`
+
+## Bioinformatics Workflow Overview
+
+### 1) Demultiplexing
+**Tool:** `cutadapt`
+
+Demultiplex raw sequencing reads based on barcode sequences to generate sample-specific FASTQ files.
+
+---
+
+### 2) Primer Trimming  
+**Tool:** `cutadapt`
+
+Remove primer sequences from demultiplexed reads to retain only target regions.
+
+---
+
+### 3) Quality Filtering  
+**Tools:** `python`, `vsearch`
+
+Filter reads based on:
+- Mean PHRED quality score  
+- Minimum and maximum fragment length  
+
+This step ensures only high-quality reads are retained for downstream processing.
+
+---
+
+### 4) Clustering / Denoising  
+
+**Tool:** `vsearch`  
+
+Choose from the following processing strategies:
+
+- **OTU clustering**: Similarity-based clustering into Operational Taxonomic Units.  
+- **ESV denoising**: Error-correction to obtain Exact Sequence Variants.  
+- **Denoised OTUs**: Denoising followed by similarity clustering.  
+- **Swarm clustering**: Local clustering using the Swarm algorithm for fine-scale resolution.
+
+---
+
+### 5) Read Table Construction and Filtering  
+
+**Tool:** `python`  
+
+Construct an abundance table (ESVs/OTUs × samples).  
+
+Apply a minimum read threshold to remove low-abundance features.
+
+---
+
+### 6) Taxonomic Assignment
+
+**Tool:** `BLASTn` via [`apscale-blast`](https://github.com/TillMacher/apscale-blast) 
+
+Assign taxonomy to representative sequences using a local reference database.
+
+---
+
+### 7) Quality Control and Reporting
+
+Generate summary statistics and visual diagnostics.
