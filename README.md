@@ -59,9 +59,9 @@ A new project will be created. Follow the instructions and fill out the settings
 │   └───data
 ├───4_quality_filtering
 │   └───data
-├───5_denoising
+├───5_clustering_denoising
 │   └───data
-├───6_ESV_table
+├───6_read_table
 │   └───data
 ├───7_taxonomic_assignment
 │   └───data
