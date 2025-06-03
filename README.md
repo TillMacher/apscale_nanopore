@@ -124,6 +124,8 @@ Apscale-nanopore operates in four different ways:
 ### 3) Live raw-data processing of non-demultiplexed data
    
 * Output your non-demultiplexed .fastq(.gz) files to the "1_raw_data/data" folder during sequencing.
+* Apscale-nanopore will automatically scan the folder for incoming files and automatically process them.
+* Press Ctrl+C to interupt the live-calling.
    
 `apscale_nanopore run -p PATH/TO/PROJECT -l`
 
@@ -132,6 +134,8 @@ Apscale-nanopore operates in four different ways:
 ### 4) Live raw-data processing of demultiplexed data
    
 * Output your demultiplexed .fastq(.gz) files to the "1_raw_data/data" folder during sequencing.
+* Apscale-nanopore will automatically scan the folder for incoming files and automatically process them.
+* Press Ctrl+C to interupt the live-calling.
    
 `apscale_nanopore run -p PATH/TO/PROJECT -l -sd`
 
