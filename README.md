@@ -37,6 +37,10 @@ To update apscale-blast run:
 
 The easiest installation option is the [Conda apscale environment](https://github.com/TillMacher/apscale_installer). This way, all dependencies will automatically be installed.
 
+Then activate the conda environment.
+
+`conda activate apscale`
+
 ## Create project
 
 First, create a new project:
