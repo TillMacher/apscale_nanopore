@@ -172,6 +172,7 @@ A quality control can be conducted for all fastq files. Simply run:
 
 ### 1) Demultiplexing
 **Tool:** `cutadapt`
+**Settings:** `Allowed errors (default=3)`
 
 Demultiplex raw sequencing reads based on barcode sequences to generate sample-specific FASTQ files.
 
@@ -179,6 +180,7 @@ Demultiplex raw sequencing reads based on barcode sequences to generate sample-s
 
 ### 2) Primer Trimming  
 **Tool:** `cutadapt`
+**Settings:** `Allowed errors (default=4)`
 
 Remove primer sequences from demultiplexed reads to retain only target regions.
 
@@ -186,6 +188,7 @@ Remove primer sequences from demultiplexed reads to retain only target regions.
 
 ### 3) Quality Filtering  
 **Tools:** `python`, `vsearch`
+**Settings:** `Min. mean Q-Score (default=20), Min. and max. length (fragment-specific)`
 
 Filter reads based on:
 - Mean PHRED quality score  
@@ -198,19 +201,22 @@ This step ensures only high-quality reads are retained for downstream processing
 ### 4) Clustering / Denoising  
 
 **Tool:** `vsearch`  
+**Settings:** `d (default=1), percentage identity (default=0.97), alpha (default=1)`
 
 Choose from the following processing strategies:
 
-- **OTU clustering**: Similarity-based clustering into Operational Taxonomic Units.  
-- **ESV denoising**: Error-correction to obtain Exact Sequence Variants.  
+- **Swarm denoising**: Local clustering using the Swarm algorithm for fine-scale resolution.
+- **Swarm OTUs**: Swarm denoising followed by similarity clustering.  
+- **ESV denoising**: Error-correction to obtain Exact Sequence Variants.
 - **Denoised OTUs**: Denoising followed by similarity clustering.  
-- **Swarm clustering**: Local clustering using the Swarm algorithm for fine-scale resolution.
+
 
 ---
 
 ### 5) Read Table Construction and Filtering  
 
 **Tool:** `python`  
+**Settings:** `minimum reads (default=10)`
 
 Construct an abundance table (ESVs/OTUs × samples).  
 
@@ -220,7 +226,8 @@ Apply a minimum read threshold to remove low-abundance features.
 
 ### 6) Taxonomic Assignment
 
-**Tool:** `BLASTn` via [`apscale-blast`](https://github.com/TillMacher/apscale_blast) 
+**Tool:** `BLASTn` via [`apscale-blast`](https://github.com/TillMacher/apscale_blast)
+**Settings:** `Apscale-blast database`
 
 Assign taxonomy to representative sequences using a local reference database.
 
