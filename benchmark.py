@@ -19,6 +19,7 @@ from collections import defaultdict
 from Bio.SeqIO import SeqRecord
 from Bio.Seq import Seq
 import itertools
+import random
 
 # =====================
 # === USER SETTINGS ===
@@ -47,8 +48,8 @@ minq = [i for i in range(10, 41, 10)]
 target_len = 64
 plus_minus = [i for i in range(10, 21, 10)]
 maxmin_values = [[target_len + i, target_len - i] for i in plus_minus]
-mode = ['OTUs', 'ESVs', 'Swarms', 'Denoised OTUs']
-percid_values = [0.97, 0.98, 0.99]
+mode = ['ESVs', 'Swarms', 'Denoised OTUs', 'Swarm OTUs']
+percid_values = [0.97]
 alpha_values = [1, 2, 3]
 d_values = [1, 2, 3]
 min_read_values = [2, 10]
@@ -62,9 +63,10 @@ for idx_err in index_error_values:
             for maxmin in maxmin_values:
                 for m in mode:
                     for min_reads in min_read_values:
-                        if m == 'OTUs':
+                        if m == 'Swarm OTUs':
                             for percid in percid_values:
-                                combinations.append((idx_err, prim_err, q, maxmin[1], maxmin[0], m, percid, 1, 1, min_reads))
+                                for d in d_values:
+                                    combinations.append((idx_err, prim_err, q, maxmin[1], maxmin[0], m, percid, 1, d, min_reads))
                         elif m == 'ESVs':
                             for alpha in alpha_values:
                                 combinations.append((idx_err, prim_err, q, maxmin[1], maxmin[0], m, 1, alpha, 1, min_reads))
@@ -79,9 +81,10 @@ for idx_err in index_error_values:
 print(f'Number of test combinations: {len(combinations)}')
 
 res = []
-existing_ids = pd.read_excel(RESULTS_FILE).fillna('')['id'].tolist() if RESULTS_FILE.exists() else []
+res_df = pd.read_excel(RESULTS_FILE).fillna('').drop_duplicates()
+existing_ids = res_df['id'].tolist() if RESULTS_FILE.exists() else []
 
-combinations = [combinations[-1]]
+random.shuffle(combinations)
 
 for combination in combinations:
     start_time = time.time()
@@ -134,27 +137,9 @@ for combination in combinations:
     df.columns = ['id', 'index_error', 'primer_error', 'minq', 'minlen', 'maxlen', 'mode', 'percid', 'alpha', 'd', 'minreads',
                   'ESVs_ref', 'ESVs_shared', 'ESVs_only', 'Species_ref', 'Species_shared', 'Species_only',
                   'Genus_ref', 'Genus_shared', 'Genus_only', 'Family_ref', 'Family_shared', 'Family_only', 'elapsed_time']
-    df_comb = pd.concat([df, pd.read_excel(RESULTS_FILE).fillna('') if RESULTS_FILE.exists() else pd.DataFrame()], ignore_index=True)
+    df_comb = pd.concat([df, res_df], ignore_index=True)
 
-    sens_prec = []
-    for _, row in df_comb.iterrows():
-        row_res = []
-        for prefix in ['ESVs', 'Species', 'Genus', 'Family']:
-            TP = row[f'{prefix}_shared'] + row[f'{prefix}_ref']
-            FN = row[f'{prefix}_ref']
-            FP = row[f'{prefix}_only']
-            sens = round(TP / (TP + FN), 2) if TP + FN > 0 else 0
-            prec = round(TP / (TP + FP), 2) if TP + FP > 0 else 0
-            row_res.extend([sens, prec])
-        sens_prec.append(row_res)
-
-    df_metrics = pd.DataFrame(sens_prec, columns=[
-        'ESVs_sensitivity', 'ESVs_precision', 'Species_sensitivity', 'Species_precision',
-        'Genus_sensitivity', 'Genus_precision', 'Family_sensitivity', 'Family_precision'])
-
-    df_final = pd.concat([df_comb, df_metrics], axis=1)
-    df_final.to_excel(RESULTS_FILE, index=False)
-
+    df_comb.to_excel(RESULTS_FILE, index=False)
 
 
 
