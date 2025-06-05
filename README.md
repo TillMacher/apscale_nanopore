@@ -124,6 +124,8 @@ Apscale-nanopore operates in four different ways:
 ### 3) Live raw-data processing of non-demultiplexed data
    
 * Output your non-demultiplexed .fastq(.gz) files to the "1_raw_data/data" folder during sequencing.
+* Apscale-nanopore will automatically scan the folder for incoming files and automatically process them.
+* Press Ctrl+C to interupt the live-calling.
    
 `apscale_nanopore run -p PATH/TO/PROJECT -l`
 
@@ -132,6 +134,8 @@ Apscale-nanopore operates in four different ways:
 ### 4) Live raw-data processing of demultiplexed data
    
 * Output your demultiplexed .fastq(.gz) files to the "1_raw_data/data" folder during sequencing.
+* Apscale-nanopore will automatically scan the folder for incoming files and automatically process them.
+* Press Ctrl+C to interupt the live-calling.
    
 `apscale_nanopore run -p PATH/TO/PROJECT -l -sd`
 
@@ -163,3 +167,75 @@ Example: Run all steps after the "quality filtering":
 A quality control can be conducted for all fastq files. Simply run:
 
 `apscale_nanopore qc -p PATH/TO/PROJECT`
+
+## Bioinformatics Workflow Overview
+
+### 1) Demultiplexing
+**Tool:** `cutadapt`
+**Settings:** `Allowed errors (default=3)`
+
+Demultiplex raw sequencing reads based on barcode sequences to generate sample-specific FASTQ files.
+
+---
+
+### 2) Primer Trimming  
+**Tool:** `cutadapt`
+**Settings:** `Allowed errors (default=4)`
+
+Remove primer sequences from demultiplexed reads to retain only target regions.
+
+---
+
+### 3) Quality Filtering  
+**Tools:** `python`, `vsearch`
+**Settings:** `Min. mean Q-Score (default=20), Min. and max. length (fragment-specific)`
+
+Filter reads based on:
+- Mean PHRED quality score  
+- Minimum and maximum fragment length  
+
+This step ensures only high-quality reads are retained for downstream processing.
+
+---
+
+### 4) Clustering / Denoising  
+
+**Tool:** `vsearch`  
+**Settings:** `d (default=1), percentage identity (default=0.97), alpha (default=1)`
+
+Choose from the following processing strategies:
+
+- **Swarm denoising**: Local clustering using the Swarm algorithm for fine-scale resolution.
+- **Swarm OTUs**: Swarm denoising followed by similarity clustering.  
+- **ESV denoising**: Error-correction to obtain Exact Sequence Variants.
+- **Denoised OTUs**: Denoising followed by similarity clustering.  
+
+
+---
+
+### 5) Read Table Construction and Filtering  
+
+**Tool:** `python`  
+**Settings:** `minimum reads (default=10)`
+
+Construct an abundance table (ESVs/OTUs × samples).  
+
+Apply a minimum read threshold to remove low-abundance features.
+
+---
+
+### 6) Taxonomic Assignment
+
+**Tool:** `BLASTn` via [`apscale-blast`](https://github.com/TillMacher/apscale_blast)
+
+**Settings:** `Apscale-blast database`
+
+Assign taxonomy to representative sequences using a local reference database.
+
+---
+
+### 7) Quality Control and Reporting
+
+**Tool:** `python`
+
+Generate summary statistics and visual diagnostics.
