@@ -1,137 +1,147 @@
 import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
+from pathlib import Path
+import glob
+from plotly.subplots import make_subplots
 
-df = pd.read_excel('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/9_benchmark/benchmark_results.xlsx')
+# === CONFIGURATION ===
+BASE_PROJECT_PATH = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore')
+BENCHMARK_FOLDER = BASE_PROJECT_PATH / '9_benchmark'
+REFERENCE_FILE = BASE_PROJECT_PATH / '9_benchmark_old/reference_taxon_table.xlsx'
+existing_ids = [p.name for p in BENCHMARK_FOLDER.iterdir() if p.is_dir()]
 
-tests = ['ESVs', 'Species']
+# === INITIATE FINAL RESULTS CONTAINER ===
+heatmap_df = pd.DataFrame()
 
-for test in tests:
-    indices = []
-    for _, row in df.iterrows():
-        id = row['id']
-        n_new = row[f'{test}_only']           # Detected only by Nanopore
-        n_shared = row[f'{test}_shared']      # Detected in both reference and Nanopore
-        n_ref_only = row[f'{test}_ref']       # Detected only in reference
-        time = row['elapsed_time']            # Time in seconds
+# === MAIN LOOP FOR ALL IDS ===
+for name in existing_ids:
+    res_folder = BENCHMARK_FOLDER / name
+    taxonomy_table = res_folder / f'{name}_taxonomy.xlsx'
+    read_table = res_folder / f'{name}_read_table.xlsx'
+    runtime_file = res_folder / f'{name}_time.xlsx'
 
-        # 1. Consistency Score — favors shared values, penalizes new
-        consistency_score = (n_shared - n_new) * n_shared
+    taxonomy_table_df = pd.read_excel(taxonomy_table).fillna('')
+    read_table_df = pd.read_excel(read_table).fillna('')
+    runtime = pd.read_excel(runtime_file).values.tolist()[0][0]
 
-        # 2. Efficiency Score — same as above, normalized by time
-        consistency_efficiency_score = consistency_score / time if time > 0 else 0
+    samples = read_table_df.columns.tolist()[2:]
+    nanopore_ids_dict, nanopore_species_dict = {}, {}
 
-        # 3. Log-Penalty Score — penalizes new detections logarithmically
-        log_penalty_score = n_shared * np.log1p(n_shared / (n_new + 1))
+    for sample in samples:
+        present_ids = read_table_df[read_table_df[sample] != 0]['ID'].tolist()
+        present_species = sorted(set(
+            taxonomy_table_df[taxonomy_table_df['unique ID'].isin(present_ids)]['Species']
+        ))
+        present_species = [i for i in present_species if i not in ['', 'NoMatch']]
+        nanopore_ids_dict[sample] = present_ids
+        nanopore_species_dict[sample] = present_species
 
-        # 4. Purity Score — how "clean" the detection is
-        purity_score = n_shared**2 / (n_shared + n_new) if (n_shared + n_new) > 0 else 0
+    # Load reference table
+    taxon_table_df = pd.read_excel(REFERENCE_FILE).fillna('')
+    ref_ids_dict, ref_species_dict = {}, {}
 
-        # 5. Jaccard Index — proportion of overlap
-        jaccard_index = n_shared / (n_shared + n_new + n_ref_only) if (n_shared + n_new + n_ref_only) > 0 else 0
+    for sample in samples:
+        present_ids = taxon_table_df[taxon_table_df[sample] != 0]['unique_ID'].tolist()
+        present_species = sorted(set(
+            taxon_table_df[taxon_table_df['unique_ID'].isin(present_ids)]['Species']
+        ))
+        present_species = [i for i in present_species if i not in ['', 'NoMatch']]
+        ref_ids_dict[sample] = present_ids
+        ref_species_dict[sample] = present_species
 
-        # 6. Weighted Jaccard Score — accounts for volume
-        weighted_jaccard_score = jaccard_index * n_shared
+    # === METRICS COMPUTATION ===
+    tests = ['ESVs', 'Species']
+    stats_list = []
 
-        # 7. Composite Score — combining consistency and efficiency
-        composite_score = consistency_score * consistency_efficiency_score / time if time > 0 else 0
+    for test in tests:
+        for sample in samples:
+            if test == 'ESVs':
+                set_nano = set(nanopore_ids_dict[sample])
+                set_ref = set(ref_ids_dict[sample])
+            else:
+                set_nano = set(nanopore_species_dict[sample])
+                set_ref = set(ref_species_dict[sample])
 
-        # 8. Normalized Recall Score — shared over all reference detections
-        recall_score = n_shared / (n_shared + n_ref_only) if (n_shared + n_ref_only) > 0 else 0
+            n_nanopore_only = len(set_nano - set_ref)
+            n_shared = len(set_nano & set_ref)
+            n_ref_only = len(set_ref - set_nano)
 
-        # 9. Detection Ratio Score — shared over all nanopore detections
-        precision_score = n_shared / (n_shared + n_new) if (n_shared + n_new) > 0 else 0
+            consistency_score = (n_shared - n_nanopore_only) * n_shared
+            consistency_efficiency_score = consistency_score / runtime if runtime > 0 else 0
+            log_penalty_score = n_shared * np.log1p(n_shared / (n_nanopore_only + 1))
+            purity_score = n_shared**2 / (n_shared + n_nanopore_only) if (n_shared + n_nanopore_only) > 0 else 0
+            jaccard_index = n_shared / (n_shared + n_nanopore_only + n_ref_only) if (n_shared + n_nanopore_only + n_ref_only) > 0 else 0
+            weighted_jaccard_score = jaccard_index * n_shared
+            composite_score = (consistency_score * consistency_efficiency_score / runtime) if runtime > 0 else 0
+            recall_score = n_shared / (n_shared + n_ref_only) if (n_shared + n_ref_only) > 0 else 0
+            precision_score = n_shared / (n_shared + n_nanopore_only) if (n_shared + n_nanopore_only) > 0 else 0
+            f1_score = (2 * recall_score * precision_score / (recall_score + precision_score)
+                        if (recall_score + precision_score) > 0 else 0)
 
-        # 10. F1-style index — harmonic mean of recall and precision
-        f1_score = (2 * recall_score * precision_score / (recall_score + precision_score)
-                    if (recall_score + precision_score) > 0 else 0)
+            stats_list.append([
+                sample, test,
+                n_nanopore_only, n_shared, n_ref_only, runtime,
+                consistency_score, consistency_efficiency_score,
+                log_penalty_score, purity_score,
+                jaccard_index, weighted_jaccard_score, composite_score,
+                recall_score, precision_score, f1_score
+            ])
 
-        indices.append([
-            id,
-            n_new,
-            n_shared,
-            n_ref_only,
-            time,
-            consistency_score,
-            consistency_efficiency_score,
-            log_penalty_score,
-            purity_score,
-            jaccard_index,
-            weighted_jaccard_score,
-            composite_score,
-            recall_score,
-            precision_score,
-            f1_score
-        ])
-
-
+    # Save to dataframe and file
     cols = [
-            "id",
-            "n_new",
-            "n_shared",
-            "n_ref_only",
-            "time",
-            "consistency_score",
-            "consistency_efficiency_score",
-            "log_penalty_score",
-            "purity_score",
-            "jaccard_index",
-            "weighted_jaccard_score",
-            "composite_score",
-            "recall_score",
-            "precision_score",
-            "f1_score"
-        ]
+        "sample", "test",
+        "n_nanopore_only", "n_shared", "n_ref_only", "runtime",
+        "consistency_score", "consistency_efficiency_score",
+        "log_penalty_score", "purity_score",
+        "jaccard_index", "weighted_jaccard_score", "composite_score",
+        "recall_score", "precision_score", "f1_score"
+    ]
+    res_df = pd.DataFrame(stats_list, columns=cols)
+    res_file = res_folder / f'{name}_stats.xlsx'
+    res_df.to_excel(res_file, index=False)
 
-    res_df = pd.DataFrame(indices, columns=cols)
+    score_names = cols[5:]
+    for test in tests:
+        sub_df = res_df[res_df['test'] == test]
+        sub_df = sub_df[score_names].mean().reset_index()
+        sub_df = pd.DataFrame([name, test] + sub_df[0].values.tolist()).T
+        sub_df.columns = ['ID', 'test'] + score_names
+        heatmap_df = pd.concat([heatmap_df, sub_df], ignore_index=True)
 
-    scores = cols[5:]
-    ranks = {i:[] for i in res_df['id']}
-    for score in scores:
-        # Get ranking: {id: rank}
-        ranked_ids = res_df.sort_values(score, ascending=False)['id'].values.tolist()
-        sub_df = {j: i + 1 for i, j in enumerate(ranked_ids)}
+# === HEATMAP PLOTTING ===
+for test in ['ESVs', 'Species']:
+    sub_df = heatmap_df[heatmap_df['test'] == test].copy()
+    sub_df = sub_df.sort_values(by=['f1_score', 'runtime', 'jaccard_index'])
 
-        # Append rank for this score to each id
-        for i in ranks:
-            ranks[i].append(sub_df.get(i, None))
+    y_values = sub_df['ID'].tolist()
+    scores = sub_df.columns[3:]
 
-    ranks_df = pd.DataFrame(ranks).transpose()
-    ranks_df_mean = ranks_df.median(axis=1).reset_index().sort_values(by=0)
-
-    res_df.to_excel(f'/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/9_benchmark/benchmark_stats_{test}.xlsx', index=False)
-    ranks_df_mean.to_excel(f'/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/9_benchmark/benchmark_ranks_{test}.xlsx', index=False)
-
-
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-
-    # Sort by F1 score and prepare data
-    heatmap_df = res_df.copy().sort_values('f1_score', ascending=True)
-    y_values = heatmap_df['id'].tolist()
-    scores = heatmap_df.columns[5:]  # or use your defined `scores` list
-
-    # Create subplots — one column per score
     fig = make_subplots(
         rows=1,
         cols=len(scores),
         shared_yaxes=True,
-        horizontal_spacing=0.01,
+        horizontal_spacing=0.01
     )
 
     for i, score in enumerate(scores):
-        z = [[val] for val in heatmap_df[score]]  # shape (n, 1)
+        z_values = sub_df[score].tolist()
 
-        # Default: no fixed range
-        zmin = None
-        zmax = None
+        # Validate z-values
+        if not all(np.isfinite(z_values)):
+            print(f"Warning: Non-finite values found in score '{score}'. Replacing with 0.")
+            z_values = [0 if not np.isfinite(v) else v for v in z_values]
+
+        z = [[val] for val in z_values]
+
         cscale = 'Blues'
+        zmin = zmax = None
 
-        # Set fixed color scale range for selected metrics
-        if score == 'jaccard_index' or score == 'recall_score' or score == 'precision_score' or score == 'f1_score':
-            zmin = 0
-            zmax = 1
+        if score in ['jaccard_index', 'recall_score', 'precision_score', 'f1_score']:
             cscale = 'Greens'
+            zmin, zmax = 0, 1
+        elif score == 'runtime':
+            cscale = 'Blues_r'
 
         fig.add_trace(
             go.Heatmap(
@@ -141,24 +151,21 @@ for test in tests:
                 colorscale=cscale,
                 zmin=zmin,
                 zmax=zmax,
-                colorbar=dict(title=score) if i == len(scores) - 1 else None,
-                showscale=(i == len(scores) - 1)
+                showscale=(i == len(scores) - 1),
+                colorbar=dict(title=score) if i == len(scores) - 1 else None
             ),
             row=1,
             col=i + 1
         )
 
-    # Update layout
     fig.update_layout(
         template='plotly_white',
-        height=15 * len(y_values),
-        width=200 * len(scores),  # dynamically scale width
+        height=15 * len(y_values) if len(y_values) >= 5 else 500,
+        width=100 * len(scores),
         showlegend=False
     )
-
     fig.update_yaxes(dtick='linear')
+    fig.update_xaxes(tickangle=-45)
 
-    # Save to file
-    fig.write_image(f'/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/9_benchmark/Scores_{test}.pdf')
-    fig.write_html(f'/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/9_benchmark/Scores_{test}.html')
-
+    fig.write_image(str(BENCHMARK_FOLDER / f'Scores_{test}.pdf'))
+    fig.write_html(str(BENCHMARK_FOLDER / f'Scores_{test}.html'))

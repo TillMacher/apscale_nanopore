@@ -23,12 +23,26 @@ from Bio.Seq import reverse_complement, Seq
 import numpy as np
 import plotly.graph_objects as go
 
-# project_folder = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore')
-# settings_df = pd.read_excel('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/test_dataset_settings.xlsx', sheet_name='Settings')
-# demultiplexing_df = pd.read_excel('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/test_dataset_settings.xlsx', sheet_name='Demultiplexing').fillna('')
-# cpu_count = 7
-# project_settings_files = '/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore/test_dataset_settings.xlsx'
-# read_length_limit = 1000
+# project_folder = Path('/Volumes/Coruscant/APSCALE_projects/naturalis_dataset_apscale_nanopore')
+# settings_df = pd.read_excel('/Volumes/Coruscant/APSCALE_projects/naturalis_dataset_apscale_nanopore/naturalis_dataset_settings.xlsx', sheet_name='Settings')
+# demultiplexing_df = pd.read_excel('/Volumes/Coruscant/APSCALE_projects/naturalis_dataset_apscale_nanopore/naturalis_dataset_settings.xlsx', sheet_name='Demultiplexing').fillna('')
+# cpu_count = 6
+# project_settings_files = '/Volumes/Coruscant/APSCALE_projects/naturalis_dataset_apscale_nanopore/naturalis_dataset_settings.xlsx'
+
+def check_dependencies(tools=["cutadapt", "vsearch", "swarm", "blastn"]):
+    missing = []
+    for tool in tools:
+        if shutil.which(tool) is None:
+            missing.append(tool)
+
+    if missing:
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Missing required tools:')
+        for tool in missing:
+            print(f" - {tool}")
+        print(f'{datetime.now().strftime("%H:%M:%S")} - Please install the missing dependencies and ensure they are in your PATH.')
+        sys.exit(1)
+    else:
+        print(f'{datetime.now().strftime("%H:%M:%S")} - All required tools are installed and accessible.')
 
 def quality_report(project_folder, sub_folder):
     # Set parameters
@@ -480,28 +494,55 @@ def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demult
         g_args.extend(['-g', search_seq])
 
     # Run cutadapt demultiplexing
-    command = f"cutadapt -e {number_of_errors} {' '.join(g_args)} --cores {cpu_count} -o {output_file} --untrimmed-output {untrimmed_fastq} --report=minimal {input_file}"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
-    in_reads1 = int(stdout.split()[11])
-    out_reads1 = int(stdout.split()[-3])
+    try:
+        command = f"cutadapt -e {number_of_errors} {' '.join(g_args)} --cores {cpu_count} -o {output_file} --untrimmed-output {untrimmed_fastq} --report=minimal {input_file}"
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+        in_reads1 = int(stdout.split()[11])
+        out_reads1 = int(stdout.split()[-3])
+    except Exception as e:
+        print("=== Cutadapt STDOUT ===")
+        print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+        print("=== Cutadapt STDERR ===")
+        print(stderr if 'stderr' in locals() else "No STDERR captured.")
+        print("=== PYTHON ERROR ===")
+        print(f"Error: {e}")
+        sys.exit()
 
     print(f'{datetime.now().strftime("%H:%M:%S")} - Finished demultiplexing in 5\'-3\' orientation!')
 
     ##======## Demultuplexing RC reads ##======##
     # Vsearch reverse complement
-    command = f"vsearch --fastx_revcomp {untrimmed_fastq} --fastqout {untrimmed_rc_fastq}"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
+    try:
+        command = f"vsearch --fastx_revcomp {untrimmed_fastq} --fastqout {untrimmed_rc_fastq}"
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+    except Exception as e:
+        print("=== Cutadapt STDOUT ===")
+        print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+        print("=== Cutadapt STDERR ===")
+        print(stderr if 'stderr' in locals() else "No STDERR captured.")
+        print("=== PYTHON ERROR ===")
+        print(f"Error: {e}")
+        sys.exit()
 
     if untrimmed_fastq.exists():
         os.remove(untrimmed_fastq)
 
     # Run cutadapt again
-    command = f"cutadapt -e {number_of_errors} {' '.join(g_args)} --cores {cpu_count} -o {output_file_rc} --discard-untrimmed --report=minimal {untrimmed_rc_fastq}"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
-    out_reads2 = int(stdout.split()[-3])
+    try:
+        command = f"cutadapt -e {number_of_errors} {' '.join(g_args)} --cores {cpu_count} -o {output_file_rc} --discard-untrimmed --report=minimal {untrimmed_rc_fastq}"
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+        out_reads2 = int(stdout.split()[-3])
+    except Exception as e:
+        print("=== Cutadapt STDOUT ===")
+        print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+        print("=== Cutadapt STDERR ===")
+        print(stderr if 'stderr' in locals() else "No STDERR captured.")
+        print("=== PYTHON ERROR ===")
+        print(f"Error: {e}")
+        sys.exit()
 
     print(f'{datetime.now().strftime("%H:%M:%S")} - Finished demultiplexing in 3\'-5\' orientation!')
 
@@ -576,29 +617,56 @@ def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_d
 
     ##======## Trimming of reads in 5'-3' orientation ##======##
     # Run cutadapt demultiplexing and primer trimming
-    command = f"cutadapt -e {number_of_errors} -g {adapter} --cores 1 -o {output_file} --untrimmed-output {output_file_untrimmed} --report=minimal {input_file}"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
-    # You can now use `stdout` and `stderr` as variables
-    in_reads1 = int(stdout.split()[11])
-    out_reads1 = int(stdout.split()[-3])
+    try:
+        command = f"cutadapt -e {number_of_errors} -g {adapter} --cores 1 -o {output_file} --untrimmed-output {output_file_untrimmed} --report=minimal {input_file}"
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+        # You can now use `stdout` and `stderr` as variables
+        in_reads1 = int(stdout.split()[11])
+        out_reads1 = int(stdout.split()[-3])
+    except Exception as e:
+        print("=== Cutadapt STDOUT ===")
+        print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+        print("=== Cutadapt STDERR ===")
+        print(stderr if 'stderr' in locals() else "No STDERR captured.")
+        print("=== PYTHON ERROR ===")
+        print(f"Error: {e}")
+        sys.exit()
 
     ##======## Trimming of reads in 3'-5' orientation ##======##
     # Vsearch reverse complement
-    command = f"vsearch --fastx_revcomp {output_file_untrimmed} --fastqout {output_file_untrimmed_rc}"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
+    try:
+        command = f"vsearch --fastx_revcomp {output_file_untrimmed} --fastqout {output_file_untrimmed_rc}"
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+    except Exception as e:
+        print("=== Cutadapt STDOUT ===")
+        print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+        print("=== Cutadapt STDERR ===")
+        print(stderr if 'stderr' in locals() else "No STDERR captured.")
+        print("=== PYTHON ERROR ===")
+        print(f"Error: {e}")
+        sys.exit()
 
     if output_file_untrimmed.exists():
         os.remove(output_file_untrimmed)
 
     # Run cutadapt primer trimming
-    command = f"cutadapt -e {number_of_errors} -g {adapter} --cores 1 -o {output_file_rc} --discard-untrimmed --report=minimal {output_file_untrimmed_rc}"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
-    # You can now use `stdout` and `stderr` as variables
-    in_reads2 = int(stdout.split()[11])
-    out_reads2 = int(stdout.split()[-3])
+    try:
+        command = f"cutadapt -e {number_of_errors} -g {adapter} --cores 1 -o {output_file_rc} --discard-untrimmed --report=minimal {output_file_untrimmed_rc}"
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+        # You can now use `stdout` and `stderr` as variables
+        in_reads2 = int(stdout.split()[11])
+        out_reads2 = int(stdout.split()[-3])
+    except Exception as e:
+        print("=== Cutadapt STDOUT ===")
+        print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+        print("=== Cutadapt STDERR ===")
+        print(stderr if 'stderr' in locals() else "No STDERR captured.")
+        print("=== PYTHON ERROR ===")
+        print(f"Error: {e}")
+        sys.exit()
 
     # Combine and overwrite
     with gzip.open(tmp_file, 'wb') as out_f:
@@ -658,10 +726,19 @@ def python_quality_filtering(project_folder, file, settings_df):
                 reads_1 += 1
 
     # Run vsearch dereplication
-    command = f"vsearch --threads 1 --derep_fulllength {filtered_fasta} --sizeout --relabel_sha1 --output {dereplicated_fasta}"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
-    reads_2 = stderr.split()[-15]
+    try:
+        command = f"vsearch --threads 1 --derep_fulllength {filtered_fasta} --sizeout --relabel_sha1 --output {dereplicated_fasta}"
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+        reads_2 = stderr.split()[-15]
+    except Exception as e:
+        print("=== Cutadapt STDOUT ===")
+        print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+        print("=== Cutadapt STDERR ===")
+        print(stderr if 'stderr' in locals() else "No STDERR captured.")
+        print("=== PYTHON ERROR ===")
+        print(f"Error: {e}")
+        sys.exit()
 
     try:
         reads_perc = round(reads_1 / total_reads * 100, 2)
@@ -679,37 +756,93 @@ def clustering_denoising(project_folder, file, settings_df):
     input_file = Path(file)
     name = input_file.name.replace('_trimmed_filtered_derep.fasta', '')
     output_folder_data = project_folder.joinpath('5_clustering_denoising', 'data')
-    cluster_file = output_folder_data.joinpath(f'{name}_centroids.fasta')
+    cluster_file = output_folder_data.joinpath(f'{name}_reads.fasta')
 
     # Collect required settings
     mode = settings_df[settings_df['Category'] == 'mode']['Variable'].values.tolist()[0]
 
+    if mode == 'ESVs':
+        representative = ''
+    else:
+        representative = settings_df[settings_df['Category'] == 'representative']['Variable'].values.tolist()[0]
+
     if mode == 'Swarms':
         d_value = settings_df[settings_df['Category'] == 'd']['Variable'].values.tolist()[0]
         # Run swarm denoising
-        command = f"swarm -d {d_value} --threads 1 -z --seeds {cluster_file} {input_file}"
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        stdout, stderr = process.communicate()
+        try:
+            if representative == 'centroid':
+                command = f"swarm -d {d_value} --threads 1 -z --seeds {cluster_file} {input_file}"
+            elif representative == 'consensus':
+                command = f"swarm -d {d_value} --threads 1 -z --consensus {cluster_file} {input_file}"
+            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate()
+        except Exception as e:
+            print("=== Cutadapt STDOUT ===")
+            print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+            print("=== Cutadapt STDERR ===")
+            print(stderr if 'stderr' in locals() else "No STDERR captured.")
+            print("=== PYTHON ERROR ===")
+            print(f"Error: {e}")
+            sys.exit()
+
     elif mode == 'ESVs':
-        alpha_value = settings_df[settings_df['Category'] == 'alpha']['Variable'].values.tolist()[0]
-        # Run vsearch denoising
-        command = f"vsearch --cluster_unoise {input_file} --unoise_alpha {alpha_value} --threads 1 --centroids {cluster_file} "
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        stdout, stderr = process.communicate()
+        try:
+            alpha_value = settings_df[settings_df['Category'] == 'alpha']['Variable'].values.tolist()[0]
+            # Run vsearch denoising
+            command = f"vsearch --cluster_unoise {input_file} --unoise_alpha {alpha_value} --threads 1 --centroids {cluster_file} "
+            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate()
+        except Exception as e:
+            print("=== Cutadapt STDOUT ===")
+            print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+            print("=== Cutadapt STDERR ===")
+            print(stderr if 'stderr' in locals() else "No STDERR captured.")
+            print("=== PYTHON ERROR ===")
+            print(f"Error: {e}")
+            sys.exit()
+
     elif mode == 'Swarm OTUs':
-        d_value = settings_df[settings_df['Category'] == 'd']['Variable'].values.tolist()[0]
-        # Run swarm denoising
-        cluster_file_0 = output_folder_data.joinpath(f'{name}_swarms.fasta')
-        command = f"swarm -d {d_value} --threads 1 -z --seeds {cluster_file_0} {input_file}"
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        stdout, stderr = process.communicate()
+        try:
+            d_value = settings_df[settings_df['Category'] == 'd']['Variable'].values.tolist()[0]
+            representative = settings_df[settings_df['Category'] == 'representative']['Variable'].values.tolist()[0]
+            # Run swarm denoising
+            cluster_file_0 = output_folder_data.joinpath(f'{name}_swarms.fasta')
+            # choose output
+            if representative == 'centroid':
+                command = f"swarm -d {d_value} --threads 1 -z --seeds {cluster_file_0} {input_file}"
+            elif representative == 'consensus':
+                command = f"swarm -d {d_value} --threads 1 -z --consensus {cluster_file_0} {input_file}"
+            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate()
+        except Exception as e:
+            print("=== Cutadapt STDOUT ===")
+            print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+            print("=== Cutadapt STDERR ===")
+            print(stderr if 'stderr' in locals() else "No STDERR captured.")
+            print("=== PYTHON ERROR ===")
+            print(f"Error: {e}")
+            sys.exit()
 
         # Then clustering
         percid_value = settings_df[settings_df['Category'] == 'percid']['Variable'].values.tolist()[0]
         # Run vsearch clustering
-        command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --centroids {cluster_file} "
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        stdout, stderr = process.communicate()
+        try:
+            # choose output
+            if representative == 'centroid':
+                command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --centroids {cluster_file} "
+            elif representative == 'consensus':
+                command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --consout {cluster_file} "
+            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate()
+        except Exception as e:
+            print("=== Cutadapt STDOUT ===")
+            print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+            print("=== Cutadapt STDERR ===")
+            print(stderr if 'stderr' in locals() else "No STDERR captured.")
+            print("=== PYTHON ERROR ===")
+            print(f"Error: {e}")
+            sys.exit()
+
         if cluster_file_0.exists():
             os.remove(cluster_file_0)
     else:
@@ -717,30 +850,65 @@ def clustering_denoising(project_folder, file, settings_df):
         alpha_value = settings_df[settings_df['Category'] == 'alpha']['Variable'].values.tolist()[0]
         # Run vsearch denoising
         cluster_file_0 = output_folder_data.joinpath(f'{name}_denoise.fasta')
-        command = f"vsearch --cluster_unoise {input_file} --unoise_alpha {alpha_value} --threads 1 --centroids {cluster_file_0} "
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        stdout, stderr = process.communicate()
+        try:
+            command = f"vsearch --cluster_unoise {input_file} --unoise_alpha {alpha_value} --threads 1 --centroids {cluster_file_0} "
+            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate()
+        except Exception as e:
+            print("=== Cutadapt STDOUT ===")
+            print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+            print("=== Cutadapt STDERR ===")
+            print(stderr if 'stderr' in locals() else "No STDERR captured.")
+            print("=== PYTHON ERROR ===")
+            print(f"Error: {e}")
+            sys.exit()
 
         # Then clustering
         percid_value = settings_df[settings_df['Category'] == 'percid']['Variable'].values.tolist()[0]
+        representative = settings_df[settings_df['Category'] == 'representative']['Variable'].values.tolist()[0]
+
         # Run vsearch clustering
-        command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --centroids {cluster_file} "
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        stdout, stderr = process.communicate()
+        try:
+            # choose output
+            if representative == 'centroid':
+                command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --centroids {cluster_file} "
+            elif representative == 'consensus':
+                command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --consout {cluster_file} "
+            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate()
+        except Exception as e:
+            print("=== Cutadapt STDOUT ===")
+            print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+            print("=== Cutadapt STDERR ===")
+            print(stderr if 'stderr' in locals() else "No STDERR captured.")
+            print("=== PYTHON ERROR ===")
+            print(f"Error: {e}")
+            sys.exit()
+
         if cluster_file_0.exists():
             os.remove(cluster_file_0)
 
     # Perform chimera detection
     nochimera_fasta = output_folder_data.joinpath(f'{name}_clusters_nochimera.fasta')
-    command = f'vsearch --uchime3_denovo {cluster_file} --threads 1 --nonchimeras {nochimera_fasta}'
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate()
-    nochimera_total = stderr.split()[-12]
-    nochimera_perc = stderr.split()[-11]
+    try:
+        command = f'vsearch --uchime3_denovo {cluster_file} --threads 1 --nonchimeras {nochimera_fasta}'
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+        nochimera_total = stderr.split()[-12]
+        nochimera_perc = stderr.split()[-11]
+    except Exception as e:
+        print("=== Cutadapt STDOUT ===")
+        print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+        print("=== Cutadapt STDERR ===")
+        print(stderr if 'stderr' in locals() else "No STDERR captured.")
+        print("=== PYTHON ERROR ===")
+        print(f"Error: {e}")
+        sys.exit()
+
     if nochimera_total == '0':
-        print(f'{datetime.now().strftime("%H:%M:%S")} - {name}: Wrote 0 non-chimera {mode}.')
+        print(f'{datetime.now().strftime("%H:%M:%S")} - {name}: Wrote 0 non-chimera {representative} {mode}.')
     else:
-        print(f'{datetime.now().strftime("%H:%M:%S")} - {name}: Wrote {int(nochimera_total):,} {nochimera_perc} non-chimera {mode}.')
+        print(f'{datetime.now().strftime("%H:%M:%S")} - {name}: Wrote {int(nochimera_total):,} {nochimera_perc} non-chimera {representative} {mode}.')
     if cluster_file.exists():
         os.remove(cluster_file)
     time.sleep(1)
@@ -822,7 +990,7 @@ def create_read_table(project_folder, settings_df):
     df.to_parquet(parquet_file, compression='snappy')
 
     # Write sequences to fasta
-    fasta_file = project_folder.joinpath('6_read_table', 'data', f'{project_name}_centroids.fasta')
+    fasta_file = project_folder.joinpath('6_read_table', 'data', f'{project_name}_reads.fasta')
     with open(fasta_file, "w") as output_handle:
         for hash, seq in df[['ID', 'Seq']].values.tolist():
             record = SeqRecord(Seq(seq), id=hash, description='')
@@ -831,7 +999,7 @@ def create_read_table(project_folder, settings_df):
 def apscale_taxonomic_assignment(project_folder, settings_df):
     # Define files
     project_name = project_folder.name.replace('_apscale_nanopore', '')
-    fasta_file = project_folder.joinpath('6_read_table', 'data', f'{project_name}_centroids.fasta')
+    fasta_file = project_folder.joinpath('6_read_table', 'data', f'{project_name}_reads.fasta')
     results_folder = project_folder.joinpath('7_taxonomic_assignment', project_name)
 
     # Collect variables
@@ -845,9 +1013,18 @@ def apscale_taxonomic_assignment(project_folder, settings_df):
             os.makedirs(results_folder, exist_ok=True)
         except FileNotFoundError:
             pass
-        command = f"apscale_blast -db {blastn_db} -q {fasta_file} -o {results_folder} -task megablast"
-        process = subprocess.Popen(command, shell=True, text=True)
-        process.wait()
+        try:
+            command = f"apscale_blast -db {blastn_db} -q {fasta_file} -o {results_folder} -task megablast"
+            process = subprocess.Popen(command, shell=True, text=True)
+            process.wait()
+        except Exception as e:
+            print("=== Cutadapt STDOUT ===")
+            print(stdout if 'stdout' in locals() else "No STDOUT captured.")
+            print("=== Cutadapt STDERR ===")
+            print(stderr if 'stderr' in locals() else "No STDERR captured.")
+            print("=== PYTHON ERROR ===")
+            print(f"Error: {e}")
+            sys.exit()
 
 def create_report(project_folder):
     # collect information
@@ -903,6 +1080,9 @@ def main():
     """
     print(message)
 
+    # Check dependencies
+    check_dependencies()
+
     # Initialize main parser
     parser = argparse.ArgumentParser(description='APSCALE nanopore')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -940,6 +1120,8 @@ def main():
     run_parser.add_argument('-alpha', type=str, help="Overwrite: Vsearch denoising alpha.")
     # d
     run_parser.add_argument('-d', type=str, help="Overwrite: swarm's d value.")
+    # representative
+    run_parser.add_argument('-rep', type=str, help="Overwrite: clustering representative value.")
     # minimum reads
     run_parser.add_argument('-minreads', type=str, help="Overwrite: Read filter threshold.")
     # STEPS
@@ -1047,6 +1229,11 @@ def main():
                 index = settings_df[settings_df['Category'] == 'd'].index[0]
                 settings_df.loc[index, 'Variable'] = args.d
                 print(f"Adjusted value: Swarm's d value: {args.d}")
+            # representative
+            if args.rep:
+                index = settings_df[settings_df['Category'] == 'representative'].index[0]
+                settings_df.loc[index, 'Variable'] = args.rep
+                print(f"Adjusted value: Clustering representative value: {args.rep}")
             # minimum reads
             if args.minreads:
                 index = settings_df[settings_df['Category'] == 'minimum reads'].index[0]

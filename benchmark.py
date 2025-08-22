@@ -25,18 +25,34 @@ import random
 # === USER SETTINGS ===
 # =====================
 
-# Base Project Path
-BASE_PROJECT_PATH = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore')
+# BASE_PROJECT_PATH = Path('/Users/tillmacher/Desktop/APSCALE_projects/test_dataset_apscale_nanopore')
+# target_len = 64
+
+print('Enter the FULL PATH to apscale-nanopore project:')
+BASE_PROJECT_PATH = input()
+if not Path(BASE_PROJECT_PATH).exists():
+    print('Warning: This folder does not exists!')
+    sys.exit()
+
+print('Enter the TARGET LENGTH of your fragment:')
+target_len = input()
+try:
+    target_len = int(target_len)
+except:
+    print('Warning: This is not a proper target length value!')
+    sys.exit()
+
+# =====================
+# === FILES ===
+# =====================
 
 # Input/Output Files
-REFERENCE_FILE = BASE_PROJECT_PATH / '9_benchmark/merged_main_new/merged_main_new_taxonomy.xlsx'
-NANOPORE_FILE = BASE_PROJECT_PATH / '7_taxonomic_assignment/test_dataset/test_dataset_taxonomy.xlsx'
-RESULTS_FILE = BASE_PROJECT_PATH / '9_benchmark/benchmark_results.xlsx'
-
-# Intermediate Files & Folders
+name = BASE_PROJECT_PATH.name.replace('_apscale_nanopore', '')
 DEMUX_INDEX_PATH = BASE_PROJECT_PATH / '2_index_demultiplexing/data'
-MERGED_FASTQ_SRC = BASE_PROJECT_PATH / '1_raw_data/tmp/merged_nanopore_data.fastq.gz'
-MERGED_FASTQ_DST = BASE_PROJECT_PATH / '1_raw_data/data/merged_nanopore_data.fastq.gz'
+NANOPORE_FILE = BASE_PROJECT_PATH / f'7_taxonomic_assignment/test_dataset/{name}_taxonomy.xlsx'
+READ_TABLE_FILE = BASE_PROJECT_PATH / f'6_read_table/{name}_read_table.xlsx'
+BENCHMARK_FOLDER = BASE_PROJECT_PATH / '9_benchmark'
+os.makedirs(BENCHMARK_FOLDER, exist_ok=True)
 
 # =====================
 # === SETTINGS LOGIC ===
@@ -45,11 +61,9 @@ MERGED_FASTQ_DST = BASE_PROJECT_PATH / '1_raw_data/data/merged_nanopore_data.fas
 index_error_values = [i for i in range(1, 4)]
 primer_error_values = [i for i in range(1, 4)]
 minq = [i for i in range(10, 41, 10)]
-target_len = 64
-plus_minus = [i for i in range(10, 21, 10)]
-maxmin_values = [[target_len + i, target_len - i] for i in plus_minus]
+maxmin_values = [[target_len + 10, target_len - 10]]
 mode = ['ESVs', 'Swarms', 'Denoised OTUs', 'Swarm OTUs']
-percid_values = [0.97]
+percid_values = [0.97, 0.98]
 alpha_values = [1, 2, 3]
 d_values = [1, 2, 3]
 min_read_values = [2, 10]
@@ -81,8 +95,7 @@ for idx_err in index_error_values:
 print(f'Number of test combinations: {len(combinations)}')
 
 res = []
-res_df = pd.read_excel(RESULTS_FILE).fillna('').drop_duplicates()
-existing_ids = res_df['id'].tolist() if RESULTS_FILE.exists() else []
+existing_ids = [Path(i).name for i in glob.glob(str(BENCHMARK_FOLDER / '*'))]
 
 random.shuffle(combinations)
 
@@ -108,38 +121,31 @@ for combination in combinations:
     )
     subprocess.run(command, shell=True, text=True)
 
-    # Load and compare
-    ref_df = pd.read_excel(REFERENCE_FILE).fillna('')
-    test_df = pd.read_excel(NANOPORE_FILE).fillna('')
+    # save runtime
+    end_time = round(time.time() - start_time, 2)
+    time_df = pd.DataFrame([end_time], columns=['time'])
 
-    def get_unique(df, col):
-        return [i for i in df[col].drop_duplicates().values.tolist() if i != '']
+    # save files
+    res_folder =  BENCHMARK_FOLDER / id
+    os.makedirs(res_folder, exist_ok=True)
 
-    comparisons = []
-    for col in ['unique ID', 'Species', 'Genus', 'Family']:
-        ref_set = set(get_unique(ref_df, col))
-        test_set = set(get_unique(test_df, col))
-        comparisons += [len(ref_set - test_set), len(ref_set & test_set), len(test_set - ref_set)]
+    taxonomy_table = BASE_PROJECT_PATH / f'7_taxonomic_assignment/{name}/{name}_taxonomy.xlsx'
+    dest = res_folder / f'{id}_taxonomy.xlsx'
+    shutil.move(taxonomy_table, dest)
 
-    run += comparisons
-    run.append(round(time.time() - start_time, 2))
-    res.append(run)
+    read_table = BASE_PROJECT_PATH / f'6_read_table/{name}_read_table.xlsx'
+    dest = res_folder / f'{id}_read_table.xlsx'
+    shutil.move(read_table, dest)
 
-    # Cleanup
-    if DEMUX_INDEX_PATH.exists():
-        shutil.rmtree(DEMUX_INDEX_PATH)
-        os.makedirs(DEMUX_INDEX_PATH, exist_ok=True)
+    seq_fasta = BASE_PROJECT_PATH / f'6_read_table/data/{name}_centroids.fasta'
+    dest = res_folder / f'{id}_centroids.fasta'
+    shutil.move(seq_fasta, dest)
 
-    # shutil.move(str(MERGED_FASTQ_SRC), str(MERGED_FASTQ_DST))
+    time_file = res_folder / f'{id}_time.xlsx'
+    time_df.to_excel(time_file, index=False)
 
-    # Write progress
-    df = pd.DataFrame(res)
-    df.columns = ['id', 'index_error', 'primer_error', 'minq', 'minlen', 'maxlen', 'mode', 'percid', 'alpha', 'd', 'minreads',
-                  'ESVs_ref', 'ESVs_shared', 'ESVs_only', 'Species_ref', 'Species_shared', 'Species_only',
-                  'Genus_ref', 'Genus_shared', 'Genus_only', 'Family_ref', 'Family_shared', 'Family_only', 'elapsed_time']
-    df_comb = pd.concat([df, res_df], ignore_index=True)
 
-    df_comb.to_excel(RESULTS_FILE, index=False)
+
 
 
 
