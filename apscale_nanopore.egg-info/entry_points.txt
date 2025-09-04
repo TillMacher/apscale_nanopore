@@ -1,0 +1,2 @@
+[console_scripts]
+apscale_nanopore = apscale_nanopore.__main__:main
