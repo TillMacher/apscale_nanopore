@@ -39,7 +39,13 @@ The easiest installation option is the [Conda apscale environment](https://githu
 
 Then activate the conda environment.
 
-`conda activate apscale`
+`conda activate apscale4`
+
+## Graphical-User-Infercace
+
+The GUI can be started with the following command:
+
+`apscale_nanopore gui`
 
 ## Create project
 
