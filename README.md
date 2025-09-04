@@ -1,11 +1,11 @@
-# apscale
+# APSCALE
 Advanced Pipeline for Simple yet Comprehensive AnaLysEs of DNA metabarcoding data
 
 [![Downloads](https://static.pepy.tech/badge/apscale)](https://pepy.tech/project/apscale)  - apscale
 
 [![Downloads](https://static.pepy.tech/badge/apscale-nanopore)](https://pepy.tech/project/apscale-nanopore)  - apscale-nanopore
 
-# apscale-nanopore
+# APSCALE-Nanopore
 
 ## Introduction
 Apscale-nanopore is a modified version of the metabarcoding pipeline [apscale](https://github.com/DominikBuchner/apscale/tree/main) and is used
