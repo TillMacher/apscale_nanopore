@@ -27,7 +27,7 @@ Output:
 ## Installation
 
 Apscale-nanopore can be installed on all common operating systems (Windows, Linux, MacOS).
-Apscale-nanopore requires Python 3.10 or higher and can be easily installed via pip in any command line:
+Apscale-nanopore requires Python 3.10 or higher.
 
 The easiest installation option is the [Conda apscale environment](https://github.com/TillMacher/apscale_installer). This way, all dependencies will automatically be installed.
 
