@@ -39,7 +39,7 @@ Alternatively, you can install Apscale-nanopore via pip:
 
 `pip install apscale_nanopore`
 
-To update apscale-blast run:
+To update apscale-nanopore run:
 
 `pip install --upgrade apscale_nanopore`
 
