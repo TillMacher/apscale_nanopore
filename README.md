@@ -1,15 +1,9 @@
-<<<<<<< HEAD
 # APSCALE-Nanopore
-=======
-# APSCALE
-Advanced Pipeline for Simple yet Comprehensive AnaLysEs of DNA metabarcoding data
->>>>>>> 97f05d31f8015ae398ed876484a6c08d18cc529f
 
 [![Downloads](https://static.pepy.tech/badge/apscale-nanopore)](https://pepy.tech/project/apscale-nanopore)
 
 Metabarcoding pipeline for **Oxford Nanopore** data, based on [APSCALE](https://github.com/DominikBuchner/apscale). APSCALE-Nanopore takes you from the raw Nanopore reads to the read table and the taxonomic assignment: index demultiplexing, primer trimming, quality filtering, clustering/denoising, read table and taxonomic assignment with [APSCALE-blast](https://github.com/TillMacher/apscale_blast). It can be used with a graphical user interface (runs in your browser) or from the command line, and also supports live processing during sequencing.
 
-<<<<<<< HEAD
 * **Input:** Nanopore sequencing data (`.fastq` or `.fastq.gz`), demultiplexed or not
 * **Output:** read table (`.xlsx`/`.parquet`), OTU/ESV sequences (`.fasta`), taxonomy table (`.xlsx`) and quality/summary reports (`.html`) in your project folder, ready for [TaxonTableTools2](https://github.com/TillMacher/TaxonTableTools2)
 
@@ -24,31 +18,6 @@ pip install apscale_nanopore
 ```
 
 With pip, [VSEARCH](https://github.com/torognes/vsearch), [SWARM](https://github.com/torognes/swarm) and [BLAST+](https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/) must be installed separately and be available in your PATH. APSCALE-Nanopore checks whether they are installed and tells you what is missing.
-=======
-# APSCALE-Nanopore
-
-## Introduction
-Apscale-nanopore is a modified version of the metabarcoding pipeline [apscale](https://github.com/DominikBuchner/apscale/tree/main) and is used
-for the processing of Oxford Nanopore data.
-
-Programs used:
-* [cutadapt](https://github.com/marcelm/cutadapt) 
-* [vsearch](https://github.com/torognes/vsearch)
-* [swarm](https://github.com/torognes/swarm)
-* [blast+](https://blast.ncbi.nlm.nih.gov/doc/blast-help/downloadblastdata.html) (blastn module)
-
-Input:
-* Non-demultiplexed Nanopore sequence data in .fastq format.
-* Demultiplexed Nanopore sequence data in .fastq format.
-
-Output:
-* read table, taxonomy table, log files, report
-
-## Installation
-
-Apscale-nanopore can be installed on all common operating systems (Windows, Linux, MacOS).
-Apscale-nanopore requires Python 3.10 or higher.
->>>>>>> 97f05d31f8015ae398ed876484a6c08d18cc529f
 
 To download all databases at once from the GUI, the browser used for the download must be installed once:
 
@@ -56,25 +25,7 @@ To download all databases at once from the GUI, the browser used for the downloa
 playwright install chromium
 ```
 
-<<<<<<< HEAD
 To update:
-=======
-`conda activate apscale4`
-
-Alternatively, you can install Apscale-nanopore via pip:
-
-`pip install apscale_nanopore`
-
-To update apscale-nanopore run:
-
-`pip install --upgrade apscale_nanopore`
-
-## Graphical-User-Infercace
-
-The GUI can be started with the following command:
-
-`apscale_nanopore gui`
->>>>>>> 97f05d31f8015ae398ed876484a6c08d18cc529f
 
 ```
 pip install --upgrade apscale_nanopore
