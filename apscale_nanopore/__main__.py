@@ -34,12 +34,22 @@ from openpyxl import load_workbook
 
 def check_cpu_count(cpu_count):
     max_cpu = multiprocessing.cpu_count()
-    if cpu_count == 'auto':
-        return multiprocessing.cpu_count() - 2
-    elif cpu_count >= max_cpu:
-        return multiprocessing.cpu_count() - 2
+    # Always use at least 1 core (e.g. on computers with only 2 cores)
+    auto_cpu = max(1, max_cpu - 2)
+    if str(cpu_count).strip() in ['auto', '']:
+        return auto_cpu
+    cpu_count = int(float(cpu_count)) # the value can also be a text, e.g. "8"
+    if cpu_count >= max_cpu or cpu_count < 1:
+        return auto_cpu
     else:
         return cpu_count
+
+def count_fasta_sequences(fasta_file):
+    # Count the sequences of a fasta file (more robust than reading the vsearch output)
+    if not Path(fasta_file).exists():
+        return 0
+    with open(fasta_file) as f:
+        return sum(1 for line in f if line.startswith('>'))
 
 def check_dependencies(tools=["cutadapt", "vsearch", "swarm", "blastn"]):
     missing = []
@@ -65,7 +75,7 @@ def quality_report(project_folder, sub_folder):
     fastq_files = folder.glob('*.fastq')
     fastq_gz_files = folder.glob('*.fastq.gz')
 
-    cpu_count = multiprocessing.cpu_count()-2
+    cpu_count = check_cpu_count('auto')
 
     def analyse_reads(fastq_file, output_folder, compressed):
         """Analyze read qualities and lengths and create summary plots."""
@@ -92,6 +102,11 @@ def quality_report(project_folder, sub_folder):
                     mean_q = 0
                 mean_qualities.append(mean_q)
                 read_lengths.append(len(record.seq))
+
+        # Empty files cannot be plotted
+        if len(read_lengths) == 0:
+            print(f'{datetime.now():%H:%M:%S} - "{name}" contains no reads, skipping.')
+            return
 
         df = pd.DataFrame({
             "MeanQuality": mean_qualities,
@@ -264,13 +279,22 @@ def import_raw_data(project_folder, settings_file, demultiplexing_df):
     ws1 = wb["Demultiplexing"]
 
     raw_data_folder = project_folder.joinpath('1_raw_data', 'data')
-    raw_data_files = glob.glob(str(raw_data_folder / '*.fastq*'))
+    raw_data_files = sorted(glob.glob(str(raw_data_folder / '*.fastq*')))
 
-    new_demultiplexing_df = pd.DataFrame(
-        [['']*4 + [Path(f).name.replace('.gz', '').replace('.fastq', '')] + ['']*2
-         for f in raw_data_files],
-        columns=demultiplexing_df.columns
-    )
+    # Keep the primers and lengths of the first row for all samples (only the IDs have to be added)
+    demultiplexing_df = demultiplexing_df.fillna('')
+    first_row = {}
+    if len(demultiplexing_df) != 0:
+        first_row = demultiplexing_df.iloc[0].to_dict()
+
+    rows = []
+    for f in raw_data_files:
+        row = {col: '' for col in demultiplexing_df.columns}
+        for col in ['Forward primer 5-3', 'Reverse primer 5-3', 'Minimum length', 'Maximum length']:
+            row[col] = first_row.get(col, '')
+        row['ID'] = Path(f).name.replace('.gz', '').replace('.fastq', '')
+        rows.append(row)
+    new_demultiplexing_df = pd.DataFrame(rows, columns=demultiplexing_df.columns)
 
     ws1.delete_rows(1, ws1.max_row)
     ws1.append(list(new_demultiplexing_df.columns))
@@ -367,7 +391,7 @@ def apscale_nanopore_watch_folder(project_folder, settings_df, demultiplexing_df
                 if "Quality filtering" in steps:
                     print(f'{datetime.now().strftime("%H:%M:%S")} - Starting quality filtering...')
                     fastq_files = glob.glob(str(project_folder.joinpath('3_primer_trimming', 'data', '*.fastq.gz')))
-                    Parallel(n_jobs=cpu_count, backend='loky')(delayed(python_quality_filtering)(project_folder, fastq_file, settings_df) for fastq_file in fastq_files)
+                    Parallel(n_jobs=cpu_count, backend='loky')(delayed(python_quality_filtering)(project_folder, fastq_file, settings_df, demultiplexing_df, skip_demultiplexing) for fastq_file in fastq_files)
                     print(f'{datetime.now().strftime("%H:%M:%S")} - Finished quality filtering!')
                     print('')
 
@@ -399,7 +423,7 @@ def apscale_nanopore_watch_folder(project_folder, settings_df, demultiplexing_df
                 print(f'{datetime.now().strftime("%H:%M:%S")} - Finished creating summary report!')
                 print('')
 
-                print(f'{datetime.now().strftime("%H:%M:%S")} - Finished raw-data processing for {len(main_files)}) files.')
+                print(f'{datetime.now().strftime("%H:%M:%S")} - Finished raw-data processing for {len(main_files)} files.')
                 print('')
 
     except KeyboardInterrupt:
@@ -438,6 +462,11 @@ def apscale_nanopore(project_folder, settings_df, demultiplexing_df, steps, skip
 
     # Demultiplex the files
     if skip_demultiplexing == False and "Index demultiplexing" in steps:
+        # Remove the results of previous runs: demultiplexed reads are appended to the sample files,
+        # so a re-run would otherwise duplicate all reads
+        for folder in ['data', 'tmp']:
+            for old_file in glob.glob(str(project_folder.joinpath('2_index_demultiplexing', folder, '*.fastq*'))):
+                os.remove(old_file)
         i = 0
         for name, main_file in main_files.items():
             # Start processing of the file
@@ -616,21 +645,24 @@ def cutadapt_index_demultiplexing(project_folder, main_file, settings_df, demult
         return
 
     # Define merging function (uncompressed)
-    def merge_fastq_files(tmp_file_fwd, tmp_file_rc, output_folder_data):
+    def cat_files(output_folder_data, tmp_file_fwd, tmp_file_rc, bufsize=1024 * 1024):
         index = int(Path(tmp_file_fwd).name.replace('_fwd.fastq', '')) - 1
         sample_id = demultiplexing_df['ID'][index]
         output_file = output_folder_data.joinpath(f'{sample_id}.fastq')
-
-        with open(output_file, "a") as out_handle:
-            for in_file in [tmp_file_fwd, tmp_file_rc]:
-                with open(in_file, "r") as in_handle:
-                    shutil.copyfileobj(in_handle, out_handle, length=1024 * 1024)  # 1MB buffer
-
-        os.remove(tmp_file_fwd)
-        os.remove(tmp_file_rc)
+        with open(output_file, "ab") as out:
+            for fname in [tmp_file_fwd, tmp_file_rc]:
+                # The rc file can be missing if no reads were found in 3'-5' orientation
+                if Path(fname).exists():
+                    with open(fname, "rb") as f:
+                        while chunk := f.read(bufsize):
+                            out.write(chunk)
+                    os.remove(fname)
         print(f'{datetime.now().strftime("%H:%M:%S")} - Merged and saved {sample_id}!')
 
-    Parallel(n_jobs=-1, backend='loky')(delayed(merge_fastq_files)(tmp_file_fwd, tmp_file_rc, output_folder_data) for tmp_file_fwd, tmp_file_rc in zip(demultiplexed_fwd_files, demultiplexed_rc_files))
+    # Combine the fwd and rc file of the same sample (matched by name, not by list position)
+    for tmp_file_fwd in demultiplexed_fwd_files:
+        tmp_file_rc = tmp_file_fwd.replace('_fwd.fastq', '_rc.fastq')
+        cat_files(output_folder_data, tmp_file_fwd, tmp_file_rc)
 
 def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_df, skip_demultiplexing):
 
@@ -657,7 +689,8 @@ def cutadapt_primer_trimming(project_folder, file, settings_df, demultiplexing_d
     # Create forward sequence
     # Check if index demultiplexing is required
     try:
-        sub_df = demultiplexing_df[demultiplexing_df['ID'] == name]
+        # Compare as text: IDs like "1" are read as numbers from Excel
+        sub_df = demultiplexing_df[demultiplexing_df['ID'].astype(str) == name]
         fwd_seq = sub_df['Forward primer 5-3'].values.tolist()[0]
         # Create reverse sequence
         rvs_seq_rc = reverse_complement(sub_df['Reverse primer 5-3'].values.tolist()[0])
@@ -753,7 +786,7 @@ def python_quality_filtering(project_folder, file, settings_df, demultiplexing_d
 
     # Collect required settings
     try:
-        sub_df = demultiplexing_df[demultiplexing_df['ID'] == name.replace('_trimmed', '')]
+        sub_df = demultiplexing_df[demultiplexing_df['ID'].astype(str) == name.replace('_trimmed', '')]
         min_len = sub_df['Minimum length'].values.tolist()[0]
         max_len = sub_df['Maximum length'].values.tolist()[0]
         trunc_val = settings_df[settings_df['Category'] == 'minimum quality']['Variable'].values.tolist()[0]
@@ -786,7 +819,7 @@ def python_quality_filtering(project_folder, file, settings_df, demultiplexing_d
         command = f"vsearch --threads 1 --derep_fulllength {filtered_fasta} --sizeout --relabel_sha1 --output {dereplicated_fasta}"
         process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         stdout, stderr = process.communicate()
-        reads_2 = stderr.split()[-15]
+        reads_2 = count_fasta_sequences(dereplicated_fasta)
     except Exception as e:
         print("=== Cutadapt STDOUT ===")
         print(stdout if 'stdout' in locals() else "No STDOUT captured.")
@@ -826,10 +859,8 @@ def clustering_denoising(project_folder, file, settings_df):
         d_value = settings_df[settings_df['Category'] == 'd']['Variable'].values.tolist()[0]
         # Run swarm denoising
         try:
-            if representative == 'centroid':
-                command = f"swarm -d {d_value} --threads 1 -z --seeds {cluster_file} {input_file}"
-            elif representative == 'consensus':
-                command = f"swarm -d {d_value} --threads 1 -z --consensus {cluster_file} {input_file}"
+            # Swarm has no consensus option: the seed (= centroid) is always used as representative
+            command = f"swarm -d {d_value} --threads 1 -z --seeds {cluster_file} {input_file}"
             process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             stdout, stderr = process.communicate()
         except Exception as e:
@@ -845,7 +876,7 @@ def clustering_denoising(project_folder, file, settings_df):
         try:
             alpha_value = settings_df[settings_df['Category'] == 'alpha']['Variable'].values.tolist()[0]
             # Run vsearch denoising
-            command = f"vsearch --cluster_unoise {input_file} --unoise_alpha {alpha_value} --threads 1 --centroids {cluster_file} "
+            command = f"vsearch --cluster_unoise {input_file} --unoise_alpha {alpha_value} --threads 1 --sizein --sizeout --centroids {cluster_file} "
             process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             stdout, stderr = process.communicate()
         except Exception as e:
@@ -863,11 +894,8 @@ def clustering_denoising(project_folder, file, settings_df):
             representative = settings_df[settings_df['Category'] == 'representative']['Variable'].values.tolist()[0]
             # Run swarm denoising
             cluster_file_0 = output_folder_data.joinpath(f'{name}_swarms.fasta')
-            # choose output
-            if representative == 'centroid':
-                command = f"swarm -d {d_value} --threads 1 -z --seeds {cluster_file_0} {input_file}"
-            elif representative == 'consensus':
-                command = f"swarm -d {d_value} --threads 1 -z --consensus {cluster_file_0} {input_file}"
+            # Swarm has no consensus option: use the seeds here (the consensus is calculated in the clustering step)
+            command = f"swarm -d {d_value} --threads 1 -z --seeds {cluster_file_0} {input_file}"
             process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             stdout, stderr = process.communicate()
         except Exception as e:
@@ -885,9 +913,9 @@ def clustering_denoising(project_folder, file, settings_df):
         try:
             # choose output
             if representative == 'centroid':
-                command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --centroids {cluster_file} "
+                command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --sizein --sizeout --centroids {cluster_file} "
             elif representative == 'consensus':
-                command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --consout {cluster_file} "
+                command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --sizein --sizeout --consout {cluster_file} "
             process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             stdout, stderr = process.communicate()
         except Exception as e:
@@ -907,7 +935,7 @@ def clustering_denoising(project_folder, file, settings_df):
         # Run vsearch denoising
         cluster_file_0 = output_folder_data.joinpath(f'{name}_denoise.fasta')
         try:
-            command = f"vsearch --cluster_unoise {input_file} --unoise_alpha {alpha_value} --threads 1 --centroids {cluster_file_0} "
+            command = f"vsearch --cluster_unoise {input_file} --unoise_alpha {alpha_value} --threads 1 --sizein --sizeout --centroids {cluster_file_0} "
             process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             stdout, stderr = process.communicate()
         except Exception as e:
@@ -927,9 +955,9 @@ def clustering_denoising(project_folder, file, settings_df):
         try:
             # choose output
             if representative == 'centroid':
-                command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --centroids {cluster_file} "
+                command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --sizein --sizeout --centroids {cluster_file} "
             elif representative == 'consensus':
-                command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --consout {cluster_file} "
+                command = f"vsearch --cluster_size {cluster_file_0} --id {percid_value} --threads 1 --sizein --sizeout --consout {cluster_file} "
             process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             stdout, stderr = process.communicate()
         except Exception as e:
@@ -950,8 +978,13 @@ def clustering_denoising(project_folder, file, settings_df):
         command = f'vsearch --uchime3_denovo {cluster_file} --threads 1 --nonchimeras {nochimera_fasta}'
         process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         stdout, stderr = process.communicate()
-        nochimera_total = stderr.split()[-12]
-        nochimera_perc = stderr.split()[-11]
+        # Count the sequences directly (the vsearch output looks different if there are 0 sequences)
+        n_clusters = count_fasta_sequences(cluster_file)
+        nochimera_total = str(count_fasta_sequences(nochimera_fasta))
+        if n_clusters == 0:
+            nochimera_perc = '(0%)'
+        else:
+            nochimera_perc = f'({round(int(nochimera_total) / n_clusters * 100, 1)}%)'
     except Exception as e:
         print("=== Cutadapt STDOUT ===")
         print(stdout if 'stdout' in locals() else "No STDOUT captured.")
@@ -979,7 +1012,7 @@ def create_read_table(project_folder, settings_df):
     # Collect required settings
     min_reads = float(settings_df[settings_df['Category'] == 'minimum reads']['Variable'].values.tolist()[0])
     if min_reads < 1:
-        print(f'Using relative threshold per sample: {min_reads}%')
+        print(f'Using relative threshold per sample: {min_reads} ({min_reads * 100}%)')
         relative = True
     else:
         print(f'Using absoulte threshold per sample: {min_reads}')
@@ -991,11 +1024,19 @@ def create_read_table(project_folder, settings_df):
         sample = file.name.replace('_clusters_nochimera.fasta', '')
         with open(file) as handle:
             for record in SeqIO.parse(handle, "fasta"):
-                size = int(record.id.split(';')[1].replace('size=', ''))
+                # Find the "size=" annotation (its position differs between centroid and consensus headers)
+                size = 1
+                for field in record.description.replace(' ', ';').split(';'):
+                    if field.startswith('size='):
+                        size = int(field.replace('size=', ''))
                 seq = str(record.seq)
                 hash = hashlib.sha3_256(seq.encode("ascii")).hexdigest()
                 data[hash][sample] += size
                 seq_dict[hash] = seq
+
+    if len(data) == 0:
+        print(f'{datetime.now():%H:%M:%S} - Error: No sequences were found in "5_clustering_denoising/data"! Cannot build the read table.')
+        return
 
     # Create and prepare DataFrame
     df = pd.DataFrame.from_dict(data, orient='index').fillna(0).astype(int)
@@ -1036,8 +1077,11 @@ def create_read_table(project_folder, settings_df):
     for sample in sample_cols:
         r0 = reads_before_dict[sample]
         r1 = reads_after_dict[sample]
-        perc = round(100 - (r0 - r1) / r0 * 100, 2)
-        cutoff = cutoff_dict[sample]
+        if r0 == 0:
+            perc = 0
+        else:
+            perc = round(100 - (r0 - r1) / r0 * 100, 2)
+        cutoff = cutoff_dict.get(sample, 0)
         print(f'{datetime.now():%H:%M:%S} - {sample}: {r0:,} -> {r1:,} reads ({perc}%) (cutoff={cutoff})')
 
     # Calculate stats
@@ -1087,14 +1131,23 @@ def apscale_taxonomic_assignment(project_folder, settings_df):
 
     # Run apscale blast
     if run_blastn == 'Yes':
-        try:
+        # Check the input files first
+        if not fasta_file.exists():
+            print(f'{datetime.now():%H:%M:%S} - Error: Cannot find "{fasta_file.name}"! Please build the read table first.')
+            return
+        if str(blastn_db).strip() == '' or not Path(str(blastn_db)).exists():
+            print(f'{datetime.now():%H:%M:%S} - Error: Cannot find the database "{blastn_db}"!')
+            print(f'{datetime.now():%H:%M:%S} - Please enter the path to your APSCALE database as "apscale db" in the settings file (or select it in the GUI).')
+            return
+
+        # Remove old results
+        if results_folder.exists():
             shutil.rmtree(results_folder)
-            os.makedirs(results_folder, exist_ok=True)
-        except FileNotFoundError:
-            pass
+        os.makedirs(results_folder, exist_ok=True)
+
         try:
-            command = f"apscale_blast -db {blastn_db} -q {fasta_file} -o {results_folder} -task {task}"
-            process = subprocess.Popen(command, shell=True, text=True)
+            command = ['apscale_blast', '-db', str(blastn_db), '-q', str(fasta_file), '-o', str(results_folder), '-task', str(task)]
+            process = subprocess.Popen(command, text=True)
             process.wait()
         except Exception as e:
             print("=== Cutadapt STDOUT ===")
@@ -1115,7 +1168,8 @@ def create_report(project_folder):
     report_folder = project_folder.joinpath('8_nanopore_report') / 'main'
     os.makedirs(report_folder, exist_ok=True)
 
-    if read_table_file.exists() and taxonomy_table_file.exists():
+    # The report only needs the read table (the taxonomic assignment is optional)
+    if read_table_file.exists():
         read_table_df = pd.read_parquet(read_table_file).fillna('')
         samples = read_table_df.columns.tolist()[2:]
         n_reads, n_groups = {}, {}
@@ -1201,9 +1255,6 @@ def main():
     """
     print(message)
 
-    # Check dependencies
-    check_dependencies()
-
     # Initialize main parser
     parser = argparse.ArgumentParser(description='APSCALE nanopore')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -1248,12 +1299,12 @@ def main():
     # STEPS
     run_parser.add_argument('-step', type=str, help="Select step to re-run individually. "
                                                     "1:Index demultiplexing, 2:Primer trimming, "
-                                                    "3:Tag demultiplexing, 4:Quality filtering, "
-                                                    "5:Clustering/denoising, 6:Read table, 7:Tax. assignment ")
+                                                    "3:Quality filtering, 4:Clustering/denoising, "
+                                                    "5:Read table, 6:Tax. assignment ")
     run_parser.add_argument('-steps', type=str, help="Select step from which to re-run all subsequent steps. "
                                                     "1:Index demultiplexing, 2:Primer trimming, "
-                                                    "3:Tag demultiplexing, 4:Quality filtering, "
-                                                    "5:Clustering/denoising, 6:Read table, 7:Tax. assignment ")
+                                                    "3:Quality filtering, 4:Clustering/denoising, "
+                                                    "5:Read table, 6:Tax. assignment ")
     # === Subparser: gui ===
     gui_parser = subparsers.add_parser('gui', help='Open Graphical User Interface.')
 
@@ -1280,6 +1331,10 @@ def main():
     if args.command == 'create':
         project_folder = Path(str(Path(args.project)) + '_apscale_nanopore')
         project_name = project_folder.name.replace('_apscale_nanopore', '')
+        # Do not overwrite the settings file of an existing project
+        if project_folder.exists():
+            print(f'{datetime.now().strftime("%H:%M:%S")} - Error: The project "{project_folder.name}" already exists!')
+            return
         create_project(project_folder, project_name)
 
     ## Load samples
@@ -1321,15 +1376,18 @@ def main():
         # Collect step information
         all_steps = {"1": "Index demultiplexing", "2": "Primer trimming",
                      "3": "Quality filtering", "4": "Clustering/denoising", "5": "Read table", "6": "Tax. assignment"}
+        if (args.step and args.step not in all_steps) or (args.steps and args.steps not in all_steps):
+            print('Error: Please choose a suitable step index (1-6)!')
+            return
         if args.step:
             steps = [all_steps[str(args.step)]]
         elif args.steps:
             steps = [all_steps[str(i)] for i in range(int(args.steps), 7)]
         else:
             steps = list(all_steps.values())
-        if steps == []:
-            print('Error: Please choose a suitable step index!')
-            return
+
+        # Check dependencies
+        check_dependencies()
 
         # Define folders and files
         project_folder = Path(args.project)
@@ -1352,16 +1410,14 @@ def main():
                 index = settings_df[settings_df['Category'] == 'allowed errors primer'].index[0]
                 settings_df.loc[index, 'Variable'] = args.e2
                 print(f'Adjusted value: Number of allowed primer errors: {args.e2}')
-            # minimum length
+            # minimum length (stored per sample in the Demultiplexing sheet: overwrite for all samples)
             if args.minlen:
-                index = settings_df[settings_df['Category'] == 'minimum length'].index[0]
-                settings_df.loc[index, 'Variable'] = args.minlen
-                print(f'Adjusted value: Minimum length: {args.minlen}')
-            # maximum length
+                demultiplexing_df['Minimum length'] = args.minlen
+                print(f'Adjusted value: Minimum length (all samples): {args.minlen}')
+            # maximum length (stored per sample in the Demultiplexing sheet: overwrite for all samples)
             if args.maxlen:
-                index = settings_df[settings_df['Category'] == 'maximum length'].index[0]
-                settings_df.loc[index, 'Variable'] = args.maxlen
-                print(f'Adjusted value: Maximum length: {args.maxlen}')
+                demultiplexing_df['Maximum length'] = args.maxlen
+                print(f'Adjusted value: Maximum length (all samples): {args.maxlen}')
             # minimum quality
             if args.minq:
                 index = settings_df[settings_df['Category'] == 'minimum quality'].index[0]

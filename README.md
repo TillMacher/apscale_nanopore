@@ -1,152 +1,113 @@
-# apscale
-Advanced Pipeline for Simple yet Comprehensive AnaLysEs of DNA metabarcoding data
+# APSCALE-Nanopore
 
-[![Downloads](https://static.pepy.tech/badge/apscale)](https://pepy.tech/project/apscale)  - apscale
+[![Downloads](https://static.pepy.tech/badge/apscale-nanopore)](https://pepy.tech/project/apscale-nanopore)
 
-[![Downloads](https://static.pepy.tech/badge/apscale-nanopore)](https://pepy.tech/project/apscale-nanopore)  - apscale-nanopore
+Metabarcoding pipeline for **Oxford Nanopore** data, based on [APSCALE](https://github.com/DominikBuchner/apscale). APSCALE-Nanopore takes you from the raw Nanopore reads to the read table and the taxonomic assignment: index demultiplexing, primer trimming, quality filtering, clustering/denoising, read table and taxonomic assignment with [APSCALE-blast](https://github.com/TillMacher/apscale_blast). It can be used with a graphical user interface (runs in your browser) or from the command line, and also supports live processing during sequencing.
 
-# apscale-nanopore
-
-## Introduction
-Apscale-nanopore is a modified version of the metabarcoding pipeline [apscale](https://github.com/DominikBuchner/apscale/tree/main) and is used
-for the processing of Oxford Nanopore data.
-
-Programs used:
-* [cutadapt](https://github.com/marcelm/cutadapt) 
-* [vsearch](https://github.com/torognes/vsearch)
-* [swarm](https://github.com/torognes/swarm)
-* [blast+](https://blast.ncbi.nlm.nih.gov/doc/blast-help/downloadblastdata.html) (blastn module)
-
-Input:
-* Non-demultiplexed Nanopore sequence data in .fastq format.
-* Demultiplexed Nanopore sequence data in .fastq format.
-
-Output:
-* read table, taxonomy table, log files, report
+* **Input:** Nanopore sequencing data (`.fastq` or `.fastq.gz`), demultiplexed or not
+* **Output:** read table (`.xlsx`/`.parquet`), OTU/ESV sequences (`.fasta`), taxonomy table (`.xlsx`) and quality/summary reports (`.html`) in your project folder, ready for [TaxonTableTools2](https://github.com/TillMacher/TaxonTableTools2)
 
 ## Installation
 
-Apscale-nanopore can be installed on all common operating systems (Windows, Linux, MacOS).
-Apscale-nanopore requires Python 3.10 or higher and can be easily installed via pip in any command line:
+The easiest way is the conda environment of the [APSCALE installer](https://github.com/TillMacher/apscale_installer), which installs APSCALE-Nanopore and all its dependencies (APSCALE-blast, cutadapt, VSEARCH, SWARM, BLAST+).
 
-`pip install apscale_nanopore`
+Alternatively, install via pip (Python ≥ 3.10):
 
-To update apscale-blast run:
+```
+pip install apscale_nanopore
+```
 
-`pip install --upgrade apscale_nanopore`
+With pip, [VSEARCH](https://github.com/torognes/vsearch), [SWARM](https://github.com/torognes/swarm) and [BLAST+](https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/) must be installed separately and be available in your PATH. APSCALE-Nanopore checks whether they are installed and tells you what is missing.
 
-The easiest installation option is the [Conda apscale environment](https://github.com/TillMacher/apscale_installer). This way, all dependencies will automatically be installed.
+To download all databases at once from the GUI, the browser used for the download must be installed once:
 
-Then activate the conda environment.
+```
+playwright install chromium
+```
 
-`conda activate apscale`
+To update:
 
-## Create project
+```
+pip install --upgrade apscale_nanopore
+```
 
-First, create a new project:
+## Graphical user interface
 
-`apscale_nanopore create -p PATH/TO/PROJECT`
+```
+conda activate apscale4
+apscale_nanopore gui
+```
 
-A new project will be created. Follow the instructions and fill out the settings file accordingly.
+The graphical interface opens in your browser. Enter the path to your projects folder (e.g. an empty folder named `APSCALE_projects`) in the sidebar, create the database folder, and create or select a project. Click **"🔄 Refresh files and folders"** in the sidebar when you have added new files.
 
-<pre>
-/YOUR_PROJECT_PATH/My_new_project/
-├───1_raw_data
-│   └───data
-├───2_index_demultiplexing
-│   └───data
-├───3_primer_trimming
-│   └───data
-├───4_quality_filtering
-│   └───data
-├───5_clustering_denoising
-│   └───data
-├───6_read_table
-│   └───data
-├───7_taxonomic_assignment
-│   └───data
-├───8_nanopore_report
-My_new_project_settings.xlsx
-</pre>
+### Pages
 
-## Settings file
+**Start**
+* **Home:** overview of the active project (raw files, demultiplexed files, FASTA files, databases), installed tools and package versions, links and citations
 
-### Sample index and primer combinations (Example)
+**Raw Data Processing**
+* **APSCALE-Nanopore:** download databases, adjust the settings (index demultiplexing, primer trimming, quality filtering, clustering/denoising, read table, taxonomic assignment) and run the selected steps. The settings are saved to the project's settings file when the analysis starts. For demultiplexed data, the raw files can be imported into the Demultiplexing sheet with one click
 
-| Forward index 5'-3'         | Forward primer 5'-3'                  | Reverse index 5'-3'         | Reverse primer 5'-3'                 | ID        |
-|-----------------------------|----------------------------------------|-----------------------------|---------------------------------------|-----------|
-| AGAACGACTTCCATACTCGTGTGA    | RGCHTTYCCHCGWATAAAYAAYATAAG            | AGAACGACTTCCATACTCGTGTGA    | GRGGRTAWACWGTTCAWCCWGTNCC              | Sample_1  |
-| AACGAGTCTCTTGGGACCCATAGA    | RGCHTTYCCHCGWATAAAYAAYATAAG            | AACGAGTCTCTTGGGACCCATAGA    | GRGGRTAWACWGTTCAWCCWGTNCC              | Sample_2  |
-| AGGTCTACCTCGCTAACACCACTG    | RGCHTTYCCHCGWATAAAYAAYATAAG            | AGGTCTACCTCGCTAACACCACTG    | GRGGRTAWACWGTTCAWCCWGTNCC              | Sample_3  |
-| CGTCAACTGACAGTGGTTCGTACT    | RGCHTTYCCHCGWATAAAYAAYATAAG            | CGTCAACTGACAGTGGTTCGTACT    | GRGGRTAWACWGTTCAWCCWGTNCC              | Sample_4  |
-| ACCCTCCAGGAAAGTACCTCTGAT    | RGCHTTYCCHCGWATAAAYAAYATAAG            | ACCCTCCAGGAAAGTACCTCTGAT    | GRGGRTAWACWGTTCAWCCWGTNCC              | Sample_5  |
-| CCAAACCCAACAACCTAGATAGGC    | RGCHTTYCCHCGWATAAAYAAYATAAG            | CCAAACCCAACAACCTAGATAGGC    | GRGGRTAWACWGTTCAWCCWGTNCC              | Sample_6  |
+**Reports**
+* **Quality Report:** create and view quality plots (mean PHRED score, read length, quality vs. length) for the raw, demultiplexed or primer-trimmed data
+* **Summary Report:** reads and OTUs/ESVs per sample, created automatically after each run
 
-### Apscale-nanopore settings  (Example)
+Live processing during sequencing is only available from the command line (see below).
 
-| Step                     | Category            | Variable                   | Comment                                                                 |
-|--------------------------|---------------------|----------------------------|-------------------------------------------------------------------------|
-| General                  | cpu count           | 7                          | Number of cores to use                                                 |
-| demultiplexing (index)   | allowed errors index| 3                          | Allowed errors during index demultiplexing                             |
-| primer trimming          | allowed errors primer| 4                         | Allowed errors during primer trimming                                  |
-| quality filtering        | minimum length      | 54                         | Reads below this length will be discarded                              |
-| quality filtering        | maximum length      | 74                         | Reads above this length will be discarded                              |
-| quality filtering        | minimum quality     | 20                         | Reads below this average PHRED quality score will be discarded         |
-| clustering/denoising     | mode                | denoised OTUs              | Choose clustering/denoising algorithm                                  |
-| clustering/denoising     | percid              | 0.97                       | Vsearch clustering percentage identity                                 |
-| clustering/denoising     | alpha               | 1                          | Vsearch denoising alpha value                                          |
-| clustering/denoising     | d                   | 1                          | Swarm's d value                                                        |
-| read table               | minimum reads       | 10                         | Discard reads below this threshold                                     |
-| taxonomic assignment     | apscale blast       | Yes                        | Run APSCALE megablast (yes or no)                                      |
-| taxonomic assignment     | apscale db          | ...                        | Path to local database                                                 |
+## Command line
 
-## Run apscale-nanopore
+### Create a project
 
-Apscale-nanopore operates in four different ways:
+```
+apscale_nanopore create -p PATH/TO/My_project
+```
 
-### 1) Raw-data processing of non-demultiplexed data
+A new project folder (`My_project_apscale_nanopore`) is created. You are asked whether your data is already demultiplexed, and the matching settings file is created. Existing projects are never overwritten.
 
-* Copy your non-demultiplexed .fastq(.gz) files to the "1_raw_data/data" folder.
-   
-`apscale_nanopore run -p PATH/TO/PROJECT`
+### Run APSCALE-Nanopore
 
-* Apscale-nanopore will demultiplex all your files according to the demultiplexing sheet.
+APSCALE-Nanopore can be run in four different ways:
 
-### 2) Raw-data processing of demultiplexed data
-   
-* Copy your demultiplexed .fastq(.gz) files to the "1_raw_data/data" folder.
-   
-`apscale_nanopore run -p PATH/TO/PROJECT -sd`
+**1) Non-demultiplexed data**
 
-* Apscale-nanopore will skip the demultiplexing and immediately start with the raw-data processing.
-* Important: Enter the primer sequences (5'-3') in the first row of the demultiplexing sheet. The index columns can be left blank.
+Copy your non-demultiplexed `.fastq(.gz)` files to `1_raw_data/data`. All files are demultiplexed according to the Demultiplexing sheet.
 
-### 3) Live raw-data processing of non-demultiplexed data
-   
-* Output your non-demultiplexed .fastq(.gz) files to the "1_raw_data/data" folder during sequencing.
-* Apscale-nanopore will automatically scan the folder for incoming files and automatically process them.
-* Press Ctrl+C to interupt the live-calling.
-   
-`apscale_nanopore run -p PATH/TO/PROJECT -l`
+```
+apscale_nanopore run -p PATH/TO/My_project_apscale_nanopore
+```
 
-* Apscale-nanopore will demultiplex all your files according to the demultiplexing sheet.
+**2) Demultiplexed data**
 
-### 4) Live raw-data processing of demultiplexed data
-   
-* Output your demultiplexed .fastq(.gz) files to the "1_raw_data/data" folder during sequencing.
-* Apscale-nanopore will automatically scan the folder for incoming files and automatically process them.
-* Press Ctrl+C to interupt the live-calling.
-   
-`apscale_nanopore run -p PATH/TO/PROJECT -l -sd`
+Copy your demultiplexed `.fastq(.gz)` files to `1_raw_data/data` (one file per sample) and add them to the Demultiplexing sheet:
 
-* Apscale-nanopore will skip the demultiplexing and immediately start with the raw-data processing.
-* Important: Enter the primer sequences (5'-3') in the first row of the demultiplexing sheet. The index columns can be left blank.
+```
+apscale_nanopore import_raw_data -p PATH/TO/My_project_apscale_nanopore
+```
+
+This writes one row per file (the file name is the sample ID) and copies the primers and lengths of the first row to all samples. Check the sheet, then run with `-sd` (skip demultiplexing):
+
+```
+apscale_nanopore run -p PATH/TO/My_project_apscale_nanopore -sd
+```
+
+**3) Live processing of non-demultiplexed data**
+
+Let the sequencer write your `.fastq(.gz)` files to `1_raw_data/data`. APSCALE-Nanopore scans the folder for new files and processes them automatically. Press `Ctrl+C` to stop.
+
+```
+apscale_nanopore run -p PATH/TO/My_project_apscale_nanopore -live
+```
+
+**4) Live processing of demultiplexed data**
+
+```
+apscale_nanopore run -p PATH/TO/My_project_apscale_nanopore -live -sd
+```
 
 ### Run individual steps
 
-* Apscale can run individual steps (-step X) or all steps after a specific module (-steps X).
+Run a single step (`-step X`) or all steps from a specific step onwards (`-steps X`):
 
-Step indices:
 * 1 = Index demultiplexing
 * 2 = Primer trimming
 * 3 = Quality filtering
@@ -154,88 +115,140 @@ Step indices:
 * 5 = Read table
 * 6 = Taxonomic assignment
 
-Example: Run "clustering/denoising"
+Example: run only the clustering/denoising
 
-`apscale_nanopore run -p PATH/TO/PROJECT -step 4`
+```
+apscale_nanopore run -p PATH/TO/My_project_apscale_nanopore -step 4
+```
 
-Example: Run all steps after the "quality filtering":
+Example: run all steps from the quality filtering onwards
 
-`apscale_nanopore run -p PATH/TO/PROJECT -steps 3`
+```
+apscale_nanopore run -p PATH/TO/My_project_apscale_nanopore -steps 3
+```
 
-## Quality control
+Re-running the index demultiplexing replaces the previous results (reads are not added twice).
 
-A quality control can be conducted for all fastq files. Simply run:
+### Change settings on the fly
 
-`apscale_nanopore qc -p PATH/TO/PROJECT`
+Settings can be changed for a single run without editing the settings file:
 
-## Bioinformatics Workflow Overview
+| Option | Setting |
+|---|---|
+| `-e1` | allowed errors index |
+| `-e2` | allowed errors primer |
+| `-minlen` / `-maxlen` | minimum / maximum length (for all samples) |
+| `-minq` | minimum quality |
+| `-mode` | clustering/denoising mode |
+| `-percid` | vsearch clustering percentage identity |
+| `-alpha` | vsearch denoising alpha |
+| `-d` | swarm's d value |
+| `-rep` | representative sequence (centroid or consensus) |
+| `-minreads` | read filter threshold |
 
-### 1) Demultiplexing
-**Tool:** `cutadapt`
-**Settings:** `Allowed errors (default=3)`
+Example:
 
-Demultiplex raw sequencing reads based on barcode sequences to generate sample-specific FASTQ files.
+```
+apscale_nanopore run -p PATH/TO/My_project_apscale_nanopore -steps 4 -mode "Swarm OTUs" -percid 0.98
+```
 
----
+### Quality control
 
-### 2) Primer Trimming  
-**Tool:** `cutadapt`
-**Settings:** `Allowed errors (default=4)`
+Create quality plots for the raw, demultiplexed or primer-trimmed data (you are asked which folder):
 
-Remove primer sequences from demultiplexed reads to retain only target regions.
+```
+apscale_nanopore qc -p PATH/TO/My_project_apscale_nanopore
+```
 
----
+## Project folder
 
-### 3) Quality Filtering  
-**Tools:** `python`, `vsearch`
-**Settings:** `Min. mean Q-Score (default=20), Min. and max. length (fragment-specific)`
+```
+APSCALE_projects/
+├── APSCALE_databases/
+└── My_project_apscale_nanopore/
+    ├── 1_raw_data/data                <- raw data (non-demultiplexed or demultiplexed)
+    ├── 2_index_demultiplexing/data
+    ├── 3_primer_trimming/data
+    ├── 4_quality_filtering/data
+    ├── 5_clustering_denoising/data
+    ├── 6_read_table                   <- read table (.xlsx/.parquet)
+    │   └── data                       <- OTU/ESV sequences (.fasta)
+    ├── 7_taxonomic_assignment         <- taxonomy table
+    ├── 8_nanopore_report              <- quality reports (data) and summary report (main)
+    └── My_project_settings.xlsx
+```
 
-Filter reads based on:
-- Mean PHRED quality score  
-- Minimum and maximum fragment length  
+## Settings file
 
-This step ensures only high-quality reads are retained for downstream processing.
+The settings file has two sheets.
 
----
+### Demultiplexing sheet
 
-### 4) Clustering / Denoising  
+One row per sample. The index columns are only required for non-demultiplexed data and can be left empty otherwise. The minimum and maximum length are set per sample, so different markers can be processed in the same run.
 
-**Tool:** `vsearch`  
-**Settings:** `d (default=1), percentage identity (default=0.97), alpha (default=1)`
+| Forward index 5-3 | Forward primer 5-3 | Reverse index 5-3 | Reverse primer 5-3 | ID | Minimum length | Maximum length |
+|---|---|---|---|---|---|---|
+| AGAACGACTTCCATACTCGTGTGA | AAACTCGTGCCAGCCACC | AGAACGACTTCCATACTCGTGTGA | GGGTATCTAATCCCAGTTTG | Sample_1 | 157 | 177 |
+| AACGAGTCTCTTGGGACCCATAGA | AAACTCGTGCCAGCCACC | AACGAGTCTCTTGGGACCCATAGA | GGGTATCTAATCCCAGTTTG | Sample_2 | 157 | 177 |
 
-Choose from the following processing strategies:
+### Settings sheet (defaults)
 
-- **Swarm denoising**: Local clustering using the Swarm algorithm for fine-scale resolution.
-- **Swarm OTUs**: Swarm denoising followed by similarity clustering.  
-- **ESV denoising**: Error-correction to obtain Exact Sequence Variants.
-- **Denoised OTUs**: Denoising followed by similarity clustering.  
+| Category | Default | Comment |
+|---|---|---|
+| cpu count | auto | Number of cores to use (auto = all cores minus two) |
+| allowed errors index | 3 | Allowed errors during index demultiplexing |
+| allowed errors primer | 3 | Allowed errors during primer trimming |
+| minimum quality | 20 | Reads below this average PHRED quality score are discarded |
+| mode | denoised OTUs | ESVs, Swarms, denoised OTUs or Swarm OTUs |
+| percid | 0.97 | vsearch clustering percentage identity |
+| alpha | 1 | vsearch denoising alpha value |
+| d | 1 | swarm's d value |
+| representative | centroid | Representative sequence of OTUs: centroid or consensus |
+| minimum reads | 0.0001 | Read filter per sample: < 1 = relative (0.0001 = 0.01% of the sample's reads), ≥ 1 = absolute number of reads |
+| apscale blast | Yes | Run the taxonomic assignment (Yes or No) |
+| task | megablast | BLAST task (megablast, blastn, dc-megablast) |
+| apscale db | | Path to the APSCALE database (selected automatically in the GUI) |
 
+## Bioinformatic workflow
 
----
+**1) Index demultiplexing** (`cutadapt`) – sorts the reads into samples by their index combination. Reads are searched in both orientations (5'-3' and 3'-5').
 
-### 5) Read Table Construction and Filtering  
+**2) Primer trimming** (`cutadapt`) – removes the primers (both orientations); reads without primers are discarded.
 
-**Tool:** `python`  
-**Settings:** `minimum reads (default=10)`
+**3) Quality filtering** (`python`, `vsearch`) – removes reads below the minimum mean PHRED score and outside the length range of the sample, then dereplicates the reads.
 
-Construct an abundance table (ESVs/OTUs × samples).  
+**4) Clustering/denoising** (`vsearch`, `swarm`) – per sample, followed by de novo chimera removal (`vsearch --uchime3_denovo`):
+* **ESVs:** denoising (UNOISE3) to exact sequence variants
+* **Swarms:** SWARM clustering; the seed (= centroid) is always used as representative
+* **denoised OTUs:** denoising followed by similarity clustering
+* **Swarm OTUs:** SWARM clustering followed by similarity clustering
 
-Apply a minimum read threshold to remove low-abundance features.
+The read count of each OTU/ESV includes the reads of all its cluster members.
 
----
+**5) Read table** (`python`) – builds the read table (OTUs/ESVs × samples) and removes low-abundance OTUs/ESVs per sample (minimum reads).
 
-### 6) Taxonomic Assignment
+**6) Taxonomic assignment** (`BLASTn` via [APSCALE-blast](https://github.com/TillMacher/apscale_blast)) – assigns taxonomy using a local reference database.
 
-**Tool:** `BLASTn` via [`apscale-blast`](https://github.com/TillMacher/apscale_blast)
+**7) Reports** (`python`, `plotly`) – summary report after each run and optional quality reports.
 
-**Settings:** `Apscale-blast database`
+## Databases
 
-Assign taxonomy to representative sequences using a local reference database.
+Pre-compiled databases for APSCALE-blast are [available here](https://seafile.rlp.net/d/c172d076de1e4c45b594/) and are updated regularly (the same databases as in [APSCALE-GUI](https://github.com/TillMacher/apscale_gui)). They are stored in `APSCALE_projects/APSCALE_databases` and can be downloaded directly in the GUI. Each database folder contains a `citation.txt`. The database path must not contain spaces.
 
----
+## Citation
 
-### 7) Quality Control and Reporting
+APSCALE-Nanopore: coming soon. Until then, please cite APSCALE:
 
-**Tool:** `python`
+* **APSCALE:** Buchner, Macher & Leese (2022) Bioinformatics 38: 4817–4819. https://doi.org/10.1093/bioinformatics/btac588
 
-Generate summary statistics and visual diagnostics.
+Please also cite the programs and data you used:
+
+* **cutadapt:** Martin (2011) EMBnet.journal 17: 10–12. https://doi.org/10.14806/ej.17.1.200
+* **VSEARCH:** Rognes et al. (2016) PeerJ 4: e2584. https://doi.org/10.7717/peerj.2584
+* **SWARM:** Mahé et al. (2022) Bioinformatics 38: 267–269. https://doi.org/10.1093/bioinformatics/btab493
+* **BLAST+:** Camacho et al. (2009) BMC Bioinformatics 10: 421. https://doi.org/10.1186/1471-2105-10-421
+* **Databases:** see the `citation.txt` in the database folder and the [APSCALE-blast citations](https://github.com/TillMacher/apscale_blast#citation)
+
+## Reporting issues
+
+Please open an [issue](https://github.com/TillMacher/apscale_nanopore/issues) or contact me via email (macher@uni-trier.de).
